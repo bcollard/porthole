@@ -1,0 +1,26 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  creationTimestamp: null
+  labels:
+    app: porthole
+  name: porthole
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: porthole
+  strategy: {}
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: porthole
+    spec:
+      serviceAccountName: porthole
+      containers:
+      - image: ko://github.com/bcollard/porthole
+        name: main
+        resources: {}
+status: {}

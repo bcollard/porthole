@@ -1,0 +1,38 @@
+# new ServiceAccount named porthole
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: porthole
+  namespace: default
+---
+# new ClusterRole named porthole
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: porthole
+rules:
+- apiGroups: [""]
+  resources: ["pods", "pods/log"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["namespaces"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["pods/exec"]
+  verbs: ["create"]
+---
+# new ClusterRoleBinding named porthole
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: porthole
+subjects:
+- kind: ServiceAccount
+  name: porthole
+  namespace: default
+roleRef:
+  kind: ClusterRole
+  name: porthole
+  apiGroup: rbac.authorization.k8s.io
+
+
