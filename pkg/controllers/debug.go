@@ -10,7 +10,7 @@ type InjectPayload struct {
 	Namespace string `json:"namespace" binding:"required"`
 	Pod       string `json:"pod" binding:"required"`
 	Image     string `json:"image"`
-	Command   string `json:"command"` // binding:"required"
+	Command   string `json:"command" binding:"required"`
 }
 
 type ExecPayload struct {
@@ -77,22 +77,5 @@ func List(context *gin.Context) {
 }
 
 func listEphemeralContainersForPod(context *gin.Context, ns string, pod string) []ephemeral.EphemeralContainer {
-	//var ephemeralContainers = make([]ephemeral.EphemeralContainer, 0)
 	return ephemeral.List(context, ns, pod)
-}
-
-func Clear(context *gin.Context) {
-	var payload InjectPayload
-	err := context.BindJSON(&payload)
-	if err != nil {
-		fmt.Errorf("error binding JSON: %v", err)
-		context.JSON(400, gin.H{
-			"message": "Invalid JSON",
-		})
-	}
-	ephemeral.ClearEphemeralContainers(context, payload.Namespace, payload.Pod)
-
-	context.JSON(200, gin.H{
-		"message": "Ephemeral containers cleared",
-	})
 }

@@ -32,7 +32,6 @@ func main() {
 	router.POST("/debug/inject", controllers.Inject)
 	router.POST("/debug/exec", controllers.Exec)
 	router.GET("/debug/list", controllers.List)
-	router.POST("/debug/clear", controllers.Clear)
 
 	router.Run("0.0.0.0:" + port)
 }
