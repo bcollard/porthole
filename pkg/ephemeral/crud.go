@@ -40,7 +40,7 @@ func List(c *gin.Context, namespace string, podName string) []EphemeralContainer
 	return ephemeralContainerList
 }
 
-func Inject(context *gin.Context, namespace string, pod string, image string, command string) {
+func Inject(context *gin.Context, namespace string, pod string, image string, command string) string {
 	kubeClient, _ := kubeconfig.GetKubClient()
 	// get the pod
 	podObj, err := kubeClient.CoreV1().Pods(namespace).Get(context, pod, metav1.GetOptions{})
@@ -49,12 +49,12 @@ func Inject(context *gin.Context, namespace string, pod string, image string, co
 	}
 
 	// generate a short UUID
-	id := uuid.New().String()[:8]
+	debugCtrName := "porthole-" + uuid.New().String()[:8]
 
 	// create the ephemeral container
 	ec := &corev1.EphemeralContainer{
 		EphemeralContainerCommon: corev1.EphemeralContainerCommon{
-			Name:                     "porthole-" + id,
+			Name:                     debugCtrName,
 			Image:                    image,
 			ImagePullPolicy:          corev1.PullIfNotPresent,
 			Stdin:                    true,
@@ -103,4 +103,5 @@ func Inject(context *gin.Context, namespace string, pod string, image string, co
 
 	fmt.Printf("Pod has %d ephemeral containers.\n", len(podObj.Spec.EphemeralContainers))
 
+	return debugCtrName
 }

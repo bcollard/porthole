@@ -14,7 +14,27 @@ echo "HTTPBIN_POD: $HTTPBIN_POD"
 curl -s $IP:${PORT}/debug/list -X GET -d '{"namespace":"default","pod":"'${HTTPBIN_POD}'"}' | jq
 
 # inject a container into the pod with command
-curl -s $IP:${PORT}/debug/inject -X POST -d '{"namespace":"default","pod":"'${HTTPBIN_POD}'", "command":"exec sh -c echo toto"}' | jq
+curl -s $IP:${PORT}/debug/inject -X POST -d '{"namespace":"default","pod":"'${HTTPBIN_POD}'", "command":"echo foo"}' | jq
+curl -s $IP:${PORT}/debug/inject -X POST -d '{"namespace":"default","pod":"'${HTTPBIN_POD}'"}' | jq
 
-# clear the injected containers
-curl -s $IP:${PORT}/debug/clear -X POST -d '{"namespace":"default","pod":"'${HTTPBIN_POD}'"}' | jq
+
+# THE IDEA
+porthole run ns/pod --image busybox -- curl service-foo:8081
+# returns the logs
+porthole term ns/pod --image busybox
+# opens a terminal (WS connection)
+
+
+
+curl $IP:${PORT}/debug/inject -X POST \
+  -d '{"namespace":"default", "pod":"'${HTTPBIN_POD}'"}' | jq
+  -d '{"namespace":"default", "pod":"'${HTTPBIN_POD}'", "image": "busybox"}' | jq
+
+#curl $IP:${PORT}/debug/run -X POST \
+#  -d '{"namespace":"default", "pod":"'${HTTPBIN_POD}'", "image": "busybox", "command":"echo foo"}' | jq
+## blocking, wait for the response, then return the output
+
+websocat $IP:${PORT}/debug/term -X POST \
+  -d '{"namespace":"default", "pod":"'${HTTPBIN_POD}'"}' | jq
+# open bidirectional connection
+

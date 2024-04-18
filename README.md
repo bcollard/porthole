@@ -1,4 +1,3 @@
-
 ## Deployment
 ```shell
 make run
@@ -27,6 +26,18 @@ make run
   cannot leverage corporate identities to grant access to namespaces. 
   Instead, authentication is delegated to the API Gateway, as explained below.
 
+Other considerations:
+- the API GW might not run in the same cluster as the backend app
+- there might be no websocket connection possible between the dev laptop and 
+  the 
+  API-Server of the cluster. But a chain of connections is still possible: `dev 
+  laptop/browser -> API GW 
+  (Optionally -> Ingress of another cluster) -> backend app -> api-server [-> 
+  kubelet 
+  -> Container Runtime] -> debug container (part of the pod NS)`  
+  Most of these connections will use WebSockets.
+
+
 ## Authentication
 - the API Gateway is the only entry point to the cluster
 - the API Gateway authenticates the user and forwards the request to the 
@@ -38,3 +49,9 @@ make run
 
 ## Authorization
 TBD - could be based on Ory Oathkeeper, OPA, or a custom solution
+
+
+## Resources
+
+- [api-server to container](https://erkanerol.github.io/post/how-kubectl-exec-works/)
+-  

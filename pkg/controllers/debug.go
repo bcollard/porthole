@@ -10,7 +10,7 @@ type InjectPayload struct {
 	Namespace string `json:"namespace" binding:"required"`
 	Pod       string `json:"pod" binding:"required"`
 	Image     string `json:"image"`
-	Command   string `json:"command" binding:"required"`
+	Command   string `json:"command"`
 }
 
 type ExecPayload struct {
@@ -41,13 +41,11 @@ func Inject(context *gin.Context) {
 		payload.Image = image
 	}
 
-	ephemeral.Inject(context, payload.Namespace, payload.Pod, payload.Image, payload.Command)
-
-	ecs := listEphemeralContainersForPod(context, payload.Namespace, payload.Pod)
+	debugCtrName := ephemeral.Inject(context, payload.Namespace, payload.Pod, payload.Image, payload.Command)
 
 	context.JSON(200, gin.H{
-		"ns/pod":              payload.Namespace + "/" + payload.Pod,
-		"ephemeralContainers": ecs,
+		"ns/pod":             payload.Namespace + "/" + payload.Pod,
+		"debugContainerName": debugCtrName,
 	})
 
 }
