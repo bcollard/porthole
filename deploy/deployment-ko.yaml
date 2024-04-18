@@ -23,4 +23,7 @@ spec:
       - image: ko://github.com/bcollard/porthole
         name: main
         resources: {}
+        env:
+          - name: WS_ADDRESS
+            value: "172.18.2.4"
 status: {}

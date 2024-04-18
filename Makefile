@@ -7,6 +7,8 @@ help:
 run: clean ## Build, deploy and expose the application
 	ko apply -B -f deploy
 	kubectl expose deployment porthole --type=LoadBalancer --name=porthole --port ${PORT}
+	kubectl expose deployment porthole --type=LoadBalancer --name=porthole-ws --port ${WS_PORT}
+
 
 print-ip: ## Print the IP address of the exposed service
 	@#curl http://$$(kubectl get svc -n default porthole -o jsonpath='{.status.loadBalancer.ingress[0].ip}'):8081/namespaces
@@ -14,4 +16,5 @@ print-ip: ## Print the IP address of the exposed service
 
 clean: ## Delete the k8s resources
 	kubectl delete service porthole || true
+	kubectl delete service porthole-ws || true
 	kubectl delete -f deploy/ || true

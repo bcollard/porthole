@@ -38,3 +38,6 @@ websocat $IP:${PORT}/debug/term -X POST \
   -d '{"namespace":"default", "pod":"'${HTTPBIN_POD}'"}' | jq
 # open bidirectional connection
 
+# get the IP address for the websocket service
+WS_IP=$(kubectl get svc -n default porthole-ws -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+echo "WS_IP: $WS_IP"
