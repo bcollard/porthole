@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"github.com/bcollard/porthole/pkg/ephemeral"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"log"
@@ -19,16 +20,22 @@ func EchoWs(ctx *gin.Context) {
 		return
 	}
 	defer c.Close()
+	// HERE
+	//c.UnderlyingConn()
 	for {
 		mt, message, err := c.ReadMessage()
 		if err != nil {
 			log.Println("read:", err)
 			break
 		}
-		log.Printf("recv:%s", message)
+		log.Printf("recv: %s", message)
 		err = c.WriteMessage(mt, message)
+
+		var ns, pod, container string
+		ephemeral.Attach(ctx, ns, pod, container)
+
 		if err != nil {
-			log.Println("write:", err)
+			log.Println("write err: ", err)
 			break
 		}
 	}

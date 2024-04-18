@@ -15,6 +15,7 @@ import (
 type EphemeralContainer struct {
 	Name    string
 	Command []string
+	Running bool
 }
 
 func List(c *gin.Context, namespace string, podName string) []EphemeralContainer {
@@ -29,9 +30,20 @@ func List(c *gin.Context, namespace string, podName string) []EphemeralContainer
 
 	// Check for ephemeral containers in the pod spec
 	if len(pod.Spec.EphemeralContainers) > 0 {
-		fmt.Println("Pod spec has ephemeral containers defined.")
 		for _, container := range pod.Spec.EphemeralContainers {
-			ephemeralContainerList = append(ephemeralContainerList, EphemeralContainer{Name: container.Name, Command: container.Command})
+			var running bool
+			for _, ctrStatus := range pod.Status.EphemeralContainerStatuses {
+				if ctrStatus.Name == container.Name {
+					if ctrStatus.State.Running != nil {
+						running = true
+					}
+				}
+			}
+			ephemeralContainerList = append(ephemeralContainerList, EphemeralContainer{
+				Name:    container.Name,
+				Command: container.Command,
+				Running: running,
+			})
 		}
 	} else {
 		fmt.Println("Pod spec does not have ephemeral containers defined.")
