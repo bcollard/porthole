@@ -1,3 +1,13 @@
+# Porthole
+
+Web-based debugging tool for Kubernetes developers.  
+Pluggable authentication and authorization.  
+Use your own images to debug your services in a Kubernetes cluster.
+
+## Big Picture
+See the following diagram for a high-level overview of the system.
+![Big Picture](./docs/Porthole-big-picture.drawio.png)
+
 ## Deployment
 ```shell
 make run
@@ -53,5 +63,5 @@ TBD - could be based on Ory Oathkeeper, OPA, or a custom solution
 
 ## Resources
 
-- [api-server to container](https://erkanerol.github.io/post/how-kubectl-exec-works/)
--  
+- [Flowing from the api-server to a container](https://erkanerol.github.io/post/how-kubectl-exec-works/)
+- [Ephemeral containers with client-go](https://github.com/iximiuz/client-go-examples/blob/main/patch-add-ephemeral-container/main.go)
