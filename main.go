@@ -98,6 +98,7 @@ func main() {
 
 }
 
+// enable the k8s logging system
 func setLogging() {
 	klog.InitFlags(nil) // initializing the flags
 	defer klog.Flush()  // flushes all pending log I/O
