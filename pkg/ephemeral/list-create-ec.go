@@ -19,7 +19,7 @@ type EphemeralContainer struct {
 }
 
 func List(c *gin.Context, namespace string, podName string) []EphemeralContainer {
-	kubeClient, _ := kubeconfig.GetKubClient()
+	kubeClient, _, _ := kubeconfig.GetKubClient()
 	// list the ephemeral containers for the pod
 	var ephemeralContainerList []EphemeralContainer
 
@@ -53,7 +53,7 @@ func List(c *gin.Context, namespace string, podName string) []EphemeralContainer
 }
 
 func Inject(context *gin.Context, namespace string, pod string, image string, command string) string {
-	kubeClient, _ := kubeconfig.GetKubClient()
+	kubeClient, _, _ := kubeconfig.GetKubClient()
 	// get the pod
 	podObj, err := kubeClient.CoreV1().Pods(namespace).Get(context, pod, metav1.GetOptions{})
 	if err != nil {

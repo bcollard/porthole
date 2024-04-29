@@ -10,7 +10,7 @@ import (
 
 // getAlbums responds with the list of all albums as JSON.
 func GetNamespaces(c *gin.Context) {
-	client, err := kubeconfig.GetKubClient()
+	client, _, err := kubeconfig.GetKubClient()
 	if err != nil {
 		fmt.Errorf("error getting Kubernetes client: %v", err)
 	}
@@ -28,7 +28,7 @@ func GetNamespaces(c *gin.Context) {
 func GetPods(c *gin.Context) {
 	namespace := c.Param("ns")
 
-	client, err := kubeconfig.GetKubClient()
+	client, _, err := kubeconfig.GetKubClient()
 	if err != nil {
 		fmt.Errorf("error getting Kubernetes client: %v", err)
 	}

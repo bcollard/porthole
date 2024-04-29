@@ -17,27 +17,8 @@ curl -s $IP:${PORT}/debug/list -X GET -d '{"namespace":"default","pod":"'${HTTPB
 curl -s $IP:${PORT}/debug/inject -X POST -d '{"namespace":"default","pod":"'${HTTPBIN_POD}'", "command":"echo foo"}' | jq
 curl -s $IP:${PORT}/debug/inject -X POST -d '{"namespace":"default","pod":"'${HTTPBIN_POD}'"}' | jq
 
-
-# THE IDEA
-porthole run ns/pod --image busybox -- curl service-foo:8081
-# returns the logs
-porthole term ns/pod --image busybox
-# opens a terminal (WS connection)
-
-
-
-curl $IP:${PORT}/debug/inject -X POST \
-  -d '{"namespace":"default", "pod":"'${HTTPBIN_POD}'"}' | jq
-  -d '{"namespace":"default", "pod":"'${HTTPBIN_POD}'", "image": "busybox"}' | jq
-
-#curl $IP:${PORT}/debug/run -X POST \
-#  -d '{"namespace":"default", "pod":"'${HTTPBIN_POD}'", "image": "busybox", "command":"echo foo"}' | jq
-## blocking, wait for the response, then return the output
-
-websocat $IP:${PORT}/debug/term -X POST \
-  -d '{"namespace":"default", "pod":"'${HTTPBIN_POD}'"}' | jq
-# open bidirectional connection
-
 # get the IP address for the websocket service
 WS_IP=$(kubectl get svc -n default porthole-ws -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
 echo "WS_IP: $WS_IP"
+
+# /term/default/httpbin-56d786c86c-6zm5z/porthole-89a166cb

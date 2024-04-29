@@ -23,6 +23,11 @@ spec:
       - image: ko://github.com/bcollard/porthole
         name: main
         resources: {}
+        args:
+          - "-v"
+          - "6"
+#          - "--logtostderr"
+#          - "true"
         env:
           - name: WS_ADDRESS
             value: "172.18.2.4"

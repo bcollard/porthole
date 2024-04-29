@@ -12,6 +12,7 @@ var (
 window.addEventListener("load", function(evt) {
     var output = document.getElementById("output");
     var input = document.getElementById("input");
+	var dest = document.getElementById("destination");
     var ws;
     var print = function(message) {
         var d = document.createElement("div");
@@ -23,7 +24,7 @@ window.addEventListener("load", function(evt) {
         if (ws) {
             return false;
         }
-        ws = new WebSocket("{{.}}");
+        ws = new WebSocket("{{.}}" + dest.value);
         ws.onopen = function(evt) {
             print("OPEN");
         }
@@ -67,6 +68,7 @@ You can change the message and send multiple times.
 <form>
 <button id="open">Open</button>
 <button id="close">Close</button>
+<p><input id="destination" type="text" value="/term/:ns/:pod/:ctr">
 <p><input id="input" type="text" value="Hello world!">
 <button id="send">Send</button>
 </form>

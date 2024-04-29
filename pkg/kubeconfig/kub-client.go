@@ -50,18 +50,18 @@ func getRESTConfig(apiServer string, kubeconfig string, kubeconfigContext string
 	return config, namespace, nil
 }
 
-func GetKubClient() (*kubernetes.Clientset, error) {
+func GetKubClient() (*kubernetes.Clientset, *rest.Config, error) {
 	config, _, err := getRESTConfig("", "", "")
 
 	if err != nil {
 		fmt.Errorf("error getting Kubernetes REST config: %v", err)
-		return nil, err
+		return nil, nil, err
 	}
 
 	client, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		fmt.Errorf("error creating Kubernetes client: %v", err)
-		return nil, err
+		return nil, config, err
 	}
-	return client, nil
+	return client, config, nil
 }
