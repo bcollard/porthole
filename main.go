@@ -26,7 +26,6 @@ func router(jwtMW gin.HandlerFunc) http.Handler {
 	r.GET("/app.js", func(c *gin.Context) { c.FileFromFS("app.js", web.FS()) })
 	r.GET("/style.css", func(c *gin.Context) { c.FileFromFS("style.css", web.FS()) })
 	r.GET("/api/config", controllers.GetConfig)
-	r.GET("/echo", controllers.EchoWs)
 
 	// ----- protected (JWT required, OPA-authorized inside the handlers) -----
 	api := r.Group("/")

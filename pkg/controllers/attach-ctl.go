@@ -4,6 +4,10 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
+	"os"
+	"slices"
+	"strings"
 
 	"github.com/bcollard/porthole/pkg/audit"
 	"github.com/bcollard/porthole/pkg/auth"
@@ -15,31 +19,46 @@ import (
 
 var (
 	upgrader = websocket.Upgrader{
-		CheckOrigin: func(r *http.Request) bool { return true },
+		CheckOrigin: checkOrigin,
 	}
+
+	allowedOrigins = parseAllowedOrigins(os.Getenv("WS_ALLOWED_ORIGINS"))
 )
 
-func EchoWs(ctx *gin.Context) {
-	w, r := ctx.Writer, ctx.Request
-	c, err := upgrader.Upgrade(w, r, nil)
+// checkOrigin gates WebSocket upgrades to defend against cross-site
+// WebSocket hijacking. Browsers always send Origin on WS upgrades; an
+// empty Origin means a non-browser client (curl/wscat/etc.) which
+// can't be cookie-CSRF'd, so we let those through. When
+// WS_ALLOWED_ORIGINS is set, only origins in that comma-separated
+// list are accepted. Otherwise we fall back to a same-origin check
+// (Origin's host must match the request's Host).
+func checkOrigin(r *http.Request) bool {
+	o := r.Header.Get("Origin")
+	if o == "" {
+		return true
+	}
+	if len(allowedOrigins) > 0 {
+		return slices.Contains(allowedOrigins, o)
+	}
+	u, err := url.Parse(o)
 	if err != nil {
-		log.Println("upgrade:", err)
-		return
+		return false
 	}
-	defer c.Close()
+	return u.Host == r.Host
+}
 
-	for {
-		mt, message, err := c.ReadMessage()
-		if err != nil {
-			log.Println("read:", err)
-			break
-		}
-		log.Printf("recv: %s", message)
-		if err := c.WriteMessage(mt, message); err != nil {
-			log.Println("write err: ", err)
-			break
+func parseAllowedOrigins(s string) []string {
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
 		}
 	}
+	return out
 }
 
 func AttachWs(c *gin.Context) {

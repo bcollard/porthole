@@ -35,6 +35,9 @@ spec:
             # authZ: talk to the local OPA sidecar.
             - name: OPA_URL
               value: "http://localhost:8181/v1/data/porthole/authz/decision"
+            # CSWSH defence: only accept WS upgrades from this origin.
+            - name: WS_ALLOWED_ORIGINS
+              value: "https://porthole.bco.runlocal.dev"
             # set AUTH_DISABLED=true to bypass auth for a local kubectl port-forward test
             # - name: AUTH_DISABLED
             #   value: "true"
