@@ -1,0 +1,14 @@
+{{- if .Values.opa.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "porthole.opaConfigMapName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "porthole.labels" . | nindent 4 }}
+data:
+  porthole.rego: |
+{{ .Values.opa.policy | indent 4 }}
+  data.json: |
+{{ .Values.opa.data | indent 4 }}
+{{- end }}

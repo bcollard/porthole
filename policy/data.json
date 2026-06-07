@@ -2,8 +2,8 @@
   "policy": {
     "roles": {
       "viewer":   ["list_namespaces", "list_pods", "list_ec"],
-      "debugger": ["list_namespaces", "list_pods", "list_ec", "inject_ec", "attach_ec"],
-      "admin":    ["list_namespaces", "list_pods", "list_ec", "inject_ec", "attach_ec"]
+      "debugger": ["list_namespaces", "list_pods", "list_ec", "inject_ec", "attach_ec", "terminate_ec"],
+      "admin":    ["list_namespaces", "list_pods", "list_ec", "inject_ec", "attach_ec", "terminate_ec"]
     },
     "bindings": [
       {"group": "porthole-admins",    "role": "admin",    "namespace_glob": "*"},

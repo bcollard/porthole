@@ -1,0 +1,13 @@
+# Smallest viable porthole install: no gateway, no IdP, AUTH_DISABLED
+# stamps a local-dev principal that OPA's default policy grants admin.
+
+auth:
+  disabled: true
+
+opa:
+  enabled: true
+
+ecSweepTTL: "15m"
+
+gateway:
+  enabled: false

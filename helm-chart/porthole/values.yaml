@@ -1,0 +1,144 @@
+# Default values for the porthole chart.
+# Override with `helm install ... -f my-values.yaml` or `--set k=v`.
+
+replicas: 1
+
+image:
+  repository: ghcr.io/bcollard/porthole
+  # tag defaults to .Chart.AppVersion when unset
+  tag: ""
+  pullPolicy: IfNotPresent
+
+# Extra args appended to the container command. `-v 6` ups klog verbosity.
+extraArgs:
+  - "-v"
+  - "6"
+
+# ServiceAccount + cluster RBAC for kube API access.
+# RBAC is cluster-wide because porthole lists/views every namespace.
+serviceAccount:
+  create: true
+  name: ""
+rbac:
+  create: true
+
+service:
+  type: ClusterIP
+  port: 8081
+
+# AuthN — JWT validation against the IdP's JWKS.
+# Set auth.disabled=true to stamp a `local-dev` principal on every
+# request (for kubectl port-forward dev loops only).
+auth:
+  disabled: false
+  jwksURL: ""
+  issuer: ""
+  audience: ""
+
+# CSWSH defence — comma-separated list of Origins accepted for the
+# /term WebSocket upgrade. Leave empty in same-origin deployments;
+# set to the public hostname (e.g. "https://porthole.example.com")
+# when running behind a gateway.
+wsAllowedOrigins: ""
+
+# AuthZ — OPA sidecar.
+opa:
+  enabled: true
+  image:
+    repository: openpolicyagent/opa
+    tag: "0.69.0-static"
+    pullPolicy: IfNotPresent
+  # When opa.enabled=true, porthole talks to the sidecar via localhost.
+  # Override if pointing at an external OPA service.
+  url: "http://localhost:8181/v1/data/porthole/authz/decision"
+  # Inline policy + data. These get serialised into a ConfigMap.
+  # Replace with your own to bind groups/roles/namespaces.
+  policy: |
+    package porthole.authz
+
+    import future.keywords.every
+    import future.keywords.if
+    import future.keywords.in
+
+    default decision := {"allow": false, "reason": "default deny"}
+
+    decision := {"allow": true, "reason": reason} if {
+      some binding in data.policy.bindings
+      binding.group in input.user.groups
+      matches_namespace(binding, input.request.namespace)
+      input.request.action in data.policy.roles[binding.role]
+      reason := sprintf("matched: group=%v role=%v ns=%v", [
+        binding.group, binding.role, input.request.namespace,
+      ])
+    }
+
+    matches_namespace(binding, ns) if {
+      ns == ""
+      binding.namespace_glob == "*"
+      not binding.namespace_labels
+    }
+    matches_namespace(binding, ns) if {
+      ns != ""
+      glob_constraint_met(binding, ns)
+      labels_constraint_met(binding)
+    }
+    glob_constraint_met(binding, _) if not binding.namespace_glob
+    glob_constraint_met(binding, ns) if {
+      binding.namespace_glob
+      glob.match(binding.namespace_glob, [], ns)
+    }
+    labels_constraint_met(binding) if not binding.namespace_labels
+    labels_constraint_met(binding) if {
+      binding.namespace_labels
+      every k, v in binding.namespace_labels {
+        input.namespace_labels[k] == v
+      }
+    }
+  data: |
+    {
+      "policy": {
+        "roles": {
+          "viewer":   ["list_namespaces", "list_pods", "list_ec"],
+          "debugger": ["list_namespaces", "list_pods", "list_ec", "inject_ec", "attach_ec", "terminate_ec"],
+          "admin":    ["list_namespaces", "list_pods", "list_ec", "inject_ec", "attach_ec", "terminate_ec"]
+        },
+        "bindings": [
+          {"group": "porthole-admins", "role": "admin", "namespace_glob": "*"}
+        ]
+      }
+    }
+
+# Ephemeral-container cleanup sweeper. Empty disables it.
+# Examples: "30m", "1h". When set, porthole terminates any
+# porthole-injected EC older than this TTL.
+ecSweepTTL: ""
+
+# Optional Gateway API resources (Gateway / HTTPRoute / SecurityPolicy
+# + the OIDC client-secret). Disabled by default — see
+# docs/examples/envoy-gateway for the full flow.
+gateway:
+  enabled: false
+  className: eg
+  hostname: porthole.example.com
+  # Pre-existing TLS secret in the gateway namespace.
+  tlsSecretName: ""
+  # OIDC SecurityPolicy (Envoy Gateway). Requires gateway.enabled.
+  oidc:
+    enabled: false
+    issuer: ""
+    clientID: ""
+    # Either set clientSecret (chart creates a Secret) or
+    # existingSecretName (chart references it as-is).
+    clientSecret: ""
+    existingSecretName: ""
+    scopes:
+      - openid
+      - profile
+      - email
+    forwardAccessToken: true
+
+resources: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+podAnnotations: {}

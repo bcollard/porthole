@@ -1,0 +1,29 @@
+# Curated overrides for the porthole helm chart used in the
+# envoy-gateway example. Pair with `helm install ... --values values.yaml`.
+
+auth:
+  disabled: false
+  # jwksURL / issuer come from --set on the install command line.
+
+wsAllowedOrigins: "https://porthole.example.com,http://porthole.example.com:8080"
+
+opa:
+  enabled: true
+
+ecSweepTTL: "30m"
+
+gateway:
+  enabled: true
+  className: eg
+  hostname: porthole.example.com
+  # Leave tlsSecretName empty for plain HTTP (kind/dev).
+  tlsSecretName: ""
+  oidc:
+    enabled: true
+    # issuer / clientID / clientSecret come from --set or your own
+    # values file. Avoid committing real secrets here.
+    forwardAccessToken: true
+    scopes:
+      - openid
+      - profile
+      - email

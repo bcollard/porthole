@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/bcollard/porthole/pkg/auth"
 	"github.com/bcollard/porthole/pkg/controllers"
+	"github.com/bcollard/porthole/pkg/ephemeral"
 	"github.com/bcollard/porthole/pkg/web"
 	"github.com/gin-gonic/gin"
 	"k8s.io/klog/v2"
@@ -47,6 +49,7 @@ func router(jwtMW gin.HandlerFunc) http.Handler {
 
 	api.POST("/debug/inject", controllers.Inject)
 	api.GET("/debug/list", controllers.List)
+	api.POST("/debug/cleanup/:ns/:pod", controllers.Cleanup)
 
 	api.GET("/term/:ns/:pod/:ctr", controllers.AttachWs)
 
@@ -83,19 +86,22 @@ func main() {
 		port = "8081"
 	}
 
+	sweepTTL, _ := time.ParseDuration(os.Getenv("EC_SWEEP_TTL"))
+	ephemeral.StartSweeper(context.Background(), ephemeral.SweepConfig{TTL: sweepTTL})
+
 	srv := &http.Server{
 		Addr:              "0.0.0.0:" + port,
 		Handler:           router(jwtMW),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
-	logStartupBanner(port)
+	logStartupBanner(port, sweepTTL)
 	if err := srv.ListenAndServe(); err != nil {
 		log.Fatal(err)
 	}
 }
 
-func logStartupBanner(port string) {
+func logStartupBanner(port string, sweepTTL time.Duration) {
 	authMode := "JWT required"
 	if os.Getenv("AUTH_DISABLED") == "true" {
 		authMode = "AUTH_DISABLED (local-dev principal)"
@@ -104,9 +110,14 @@ func logStartupBanner(port string) {
 	if u := os.Getenv("OPA_URL"); u != "" {
 		opaMode = "OPA @ " + u
 	}
+	sweepMode := "EC sweeper disabled"
+	if sweepTTL > 0 {
+		sweepMode = "EC sweeper TTL=" + sweepTTL.String()
+	}
 	fmt.Printf("Porthole listening on http://0.0.0.0:%s/ui/\n", port)
 	fmt.Printf("  authN: %s\n", authMode)
 	fmt.Printf("  authZ: %s\n", opaMode)
+	fmt.Printf("  sweep: %s\n", sweepMode)
 }
 
 func setLogging() {

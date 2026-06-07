@@ -48,6 +48,37 @@ func LogAttachDeny(c *gin.Context, namespace, pod, ctr, reason string) {
 	)
 }
 
+// LogCleanup emits the audit line for a cleanup call (manual
+// "terminate all porthole-* ECs in this pod"). results may be nil
+// when err is non-nil. Called once per request — on both success
+// and failure — so denied attempts are recorded too.
+func LogCleanup(c *gin.Context, start time.Time, namespace, pod string, results any, err error) {
+	attrs := []slog.Attr{
+		slog.String("action", "terminate_ec"),
+		slog.String("user", User(c)),
+		slog.String("source_ip", c.ClientIP()),
+		slog.String("namespace", namespace),
+		slog.String("pod", pod),
+		slog.Int64("duration_ms", time.Since(start).Milliseconds()),
+	}
+	if rid := c.GetHeader("X-Request-Id"); rid != "" {
+		attrs = append(attrs, slog.String("request_id", rid))
+	}
+	if err == nil {
+		attrs = append(attrs,
+			slog.String("outcome", "success"),
+			slog.Any("results", results),
+		)
+		logger.LogAttrs(c, slog.LevelInfo, "cleanup", attrs...)
+		return
+	}
+	attrs = append(attrs,
+		slog.String("outcome", "error"),
+		slog.String("error", err.Error()),
+	)
+	logger.LogAttrs(c, slog.LevelWarn, "cleanup", attrs...)
+}
+
 // LogInject emits the audit line for one inject decision. Call it
 // once per request — on both success and failure — so denied
 // attempts are recorded too. namespace/pod/image may be empty when

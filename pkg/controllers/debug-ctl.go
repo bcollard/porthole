@@ -133,3 +133,30 @@ func GetConfig(c *gin.Context) {
 		"defaultImage": defaultDebugImage,
 	})
 }
+
+// Cleanup terminates every running porthole-injected ephemeral
+// container in the targeted pod.
+func Cleanup(c *gin.Context) {
+	start := time.Now()
+	ns := c.Param("ns")
+	pod := c.Param("pod")
+	if !auth.AuthorizeOrAbort(c, auth.ActionTerminateEC, ns, pod) {
+		audit.LogCleanup(c, start, ns, pod, nil, authDeny("authz"))
+		return
+	}
+	results, err := ephemeral.Cleanup(c, ns, pod)
+	audit.LogCleanup(c, start, ns, pod, results, err)
+	if err != nil {
+		status := http.StatusBadGateway
+		if strings.Contains(err.Error(), "not found") {
+			status = http.StatusNotFound
+		}
+		c.JSON(status, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"namespace": ns,
+		"pod":       pod,
+		"results":   results,
+	})
+}

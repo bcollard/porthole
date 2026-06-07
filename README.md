@@ -1,108 +1,147 @@
 # Porthole
 
-Web-based debug terminal for Kubernetes — pick a pod, inject an ephemeral container with the image you want (`busybox`, `netshoot`, `psql`, …), attach to it from the browser. Pluggable authN/authZ so developers reach pods without `kubectl`, and without the cluster having to know their corporate identity.
+Web-based debug terminal for Kubernetes. Pick a pod, inject an ephemeral
+container with the image you want (`busybox`, `netshoot`, `psql`, …),
+attach to it from your browser. Pluggable authN (JWT/OIDC) and authZ
+(OPA) so developers reach pods without `kubectl`, and without the cluster
+having to know their corporate identity.
 
-## Big picture
+![architecture](./docs/architecture.svg)
 
-Three diagrams, each at a different zoom level:
+## Getting started
 
-- **[`docs/architecture.svg`](./docs/architecture.svg)** — system layout: browser → Envoy Gateway (+ OIDC) → Porthole → kube-apiserver → kubelet → ephemeral container.
-- **[`docs/traffic-flow.svg`](./docs/traffic-flow.svg)** — byte paths through an attach session: stdout, stdin, and resize travel three distinct chains across the websocket, the k8s executor, the kubelet, and the PTY.
-- **[`docs/sequence.svg`](./docs/sequence.svg)** — page load → discovery → inject → attach → live session → close.
+### Option A — no auth, smallest possible install
 
-## Why
-
-- **Simplicity.** Developers connect to a backend app in the cluster instead of proxying `kubectl exec` from their laptop. Lens/k9s also work but make the OIDC integration awkward when teams use different IdPs from the cluster.
-- **Flexibility.** Inject *any* image you can pull from a registry as the debug container — `psql`, `redis-cli`, `dig`, your own forensic tools. No special configuration on the target pod.
-- **Zero-trust.** The cluster's mesh policies still apply to the ephemeral container: it only reaches what the target pod can reach.
-- **Corporate-identity friendly.** Authentication is enforced at the API gateway (Envoy Gateway + OIDC). The cluster doesn't need to know your corporate users; Porthole reads identity claims out of the JWT and consults an OPA sidecar for authorization.
-
-## Repo layout
-
-```
-.
-├── main.go                              # single-port gin engine
-├── pkg/
-│   ├── controllers/                     # HTTP/WS handlers (discovery, inject, attach)
-│   ├── ephemeral/                       # k8s patch + attach via remotecommand
-│   ├── util/                            # WsSession (binary stdin + JSON-text control)
-│   ├── auth/                            # JWT middleware + OPA client
-│   ├── authdata/                        # cached ns-label lookups for OPA input
-│   ├── audit/                           # one slog JSON line per inject/attach decision
-│   ├── kubeconfig/                      # in-cluster + ~/.kube fallback
-│   └── web/dist/                        # embedded SPA (xterm.js, vanilla ES modules)
-├── policy/
-│   ├── porthole.rego                    # authZ rules — groups × namespace × labels × time
-│   └── data.json                        # roles + bindings
-├── deploy/
-│   ├── deployment-ko.yaml               # porthole + opa sidecar
-│   ├── rbac.yaml                        # ClusterRole for pods/ephemeralcontainers
-│   ├── opa/policy-configmap.yaml        # rego + data mounted into the sidecar
-│   └── envoy-gateway/                   # Gateway, HTTPRoute, SecurityPolicy (OIDC)
-├── scripts/
-│   ├── runlocal-subdomain-bootstrap.sh  # bco.runlocal.dev DNS + wildcard cert (lego)
-│   ├── keycloak-bootstrap.sh            # realm/client/user via kc CLI
-│   ├── envoy-smoke.sh                   # ROPC + curl through the gateway
-│   └── opa-eval.sh                      # 15 policy cases run locally
-├── docs/                                # the SVGs above
-└── Makefile
-```
-
-## Quickstart — local, no cluster, no auth
-
-Bare metal — just talks to whatever cluster your `kubectl` currently points at.
+The fastest way to see it work: install the chart with auth disabled on
+a fresh `kind` cluster, then port-forward.
 
 ```sh
-AUTH_DISABLED=true make run-local
+kind create cluster --name porthole-demo
+
+helm install porthole ./helm-chart/porthole \
+  --namespace porthole --create-namespace \
+  --values docs/examples/porthole/values.yaml
+
+kubectl -n porthole rollout status deploy/porthole --timeout=120s
+kubectl -n porthole port-forward svc/porthole 8081:8081 &
 open http://localhost:8081/ui/
 ```
 
-This stamps a `local-dev` principal onto every request and skips OPA, so you can drive the UI immediately. Audit logs still emit (with `user:"local-dev"`).
+With `auth.disabled=true` in the example values, every request is
+stamped as the `local-dev` principal and OPA's default policy grants it
+admin. Drive the UI immediately: pick a namespace, pick a pod, click
+**+ Debugger**, you'll be attached as soon as the EC is running. Click
+**Clean up all** to terminate every porthole-injected EC in that pod.
 
-## Deploy on a fresh klimax kind cluster
+### Option B — Envoy Gateway + OIDC
 
-End-to-end happy path:
+Full path: a real cluster with Envoy Gateway in front, OIDC auth via
+Keycloak (or any OIDC IdP), OPA policy.
 
 ```sh
-make cluster-up           # klimax cluster create porthole-e2e
-make runlocal-bootstrap   # one-time: DNS zone + wildcard TLS cert for bco.runlocal.dev
-make envoy-install        # helm install envoy-gateway
-make deploy               # ko build + RBAC + Deployment + Service + OPA ConfigMap
-make keycloak-bootstrap   # creates realm/client/user in the managed Keycloak
-#   ... copy the printed client_secret into deploy/envoy-gateway/secret.yaml ...
-kubectl apply -f deploy/envoy-gateway/secret.yaml
-make gateway-apply        # Gateway + HTTPRoute + SecurityPolicy
-open https://porthole.bco.runlocal.dev/ui/
+# 1. cluster + Envoy Gateway
+kind create cluster --name porthole-demo
+helm upgrade --install eg \
+  oci://docker.io/envoyproxy/gateway-helm \
+  --version v1.6.0 \
+  -n envoy-gateway-system --create-namespace
+
+# 2. Keycloak (skip if you already have an IdP).
+#    Easiest: run Keycloak in dev mode inside the same cluster.
+kubectl create ns keycloak
+kubectl -n keycloak create deployment keycloak \
+  --image=quay.io/keycloak/keycloak:26.0 -- start-dev
+kubectl -n keycloak set env deployment/keycloak \
+  KEYCLOAK_ADMIN=admin KEYCLOAK_ADMIN_PASSWORD=admin
+kubectl -n keycloak expose deployment keycloak --port=8080 --target-port=8080
+kubectl -n keycloak port-forward svc/keycloak 8080:8080 &
+
+# 3. Bootstrap realm/client/user against Keycloak's admin API.
+KEYCLOAK_URL=http://localhost:8080 ./scripts/keycloak-bootstrap.sh
+# ^ prints the client_secret + ready-to-paste helm flags
+
+# 4. Install Porthole with the printed values.
+helm install porthole ./helm-chart/porthole \
+  --namespace porthole --create-namespace \
+  --values docs/examples/envoy-gateway/values.yaml \
+  --set auth.jwksURL=http://localhost:8080/realms/porthole/protocol/openid-connect/certs \
+  --set auth.issuer=http://localhost:8080/realms/porthole \
+  --set gateway.oidc.issuer=http://localhost:8080/realms/porthole \
+  --set gateway.oidc.clientID=porthole \
+  --set gateway.oidc.clientSecret=<paste-from-step-3>
 ```
 
-`make e2e` chains the same sequence and prints the manual steps that remain.
+See [`docs/examples/envoy-gateway/`](./docs/examples/envoy-gateway/) for
+the full walkthrough including `kind` workarounds for LoadBalancer
+addresses and TLS.
 
-## Authentication (Envoy Gateway + Keycloak)
+### Run from source
 
-Envoy Gateway terminates TLS, runs the OIDC handshake against Keycloak, and forwards authenticated requests to Porthole. Porthole validates the JWT itself (so it never trusts a header it can't verify):
+```sh
+AUTH_DISABLED=true go run .          # talks to your current kubectl context
+open http://localhost:8081/ui/
+```
 
-| Env var          | Example                                                                        |
-|------------------|--------------------------------------------------------------------------------|
-| `JWKS_URL`       | `https://keycloak.kong.runlocal.dev/realms/porthole/protocol/openid-connect/certs` |
-| `OIDC_ISSUER`    | `https://keycloak.kong.runlocal.dev/realms/porthole`                           |
-| `OIDC_AUDIENCE`  | _(optional)_ expected `aud` claim                                              |
-| `AUTH_DISABLED`  | `true` to bypass JWT validation entirely (local dev)                            |
+Stamps a `local-dev` principal, skips OPA, useful for hacking on the
+backend. The SPA at `pkg/web/dist/` is embedded into the binary, so a
+plain `go build` is enough — no separate frontend build.
 
-The middleware reads the token from `X-ID-Token` first, then falls back to `Authorization: Bearer …`.
+## Why
 
-> **Note on `forwardIDToken`.** The intent is for Envoy to forward the OIDC `id_token` as a custom header. The `SecurityPolicy.oidc.forwardIDToken` field exists in the EG v1alpha1 API but is marked `+notImplementedHide` in v1.6, so today the SecurityPolicy uses `forwardAccessToken: true` (sends `Authorization: Bearer <access_token>`). The Keycloak access_token carries the same identity claims when the client maps `openid+profile+email` scopes, so authZ semantics are unchanged. The migration is a 2-line swap when EG ships the implementation.
+- **Simplicity.** Developers connect to a backend app in the cluster
+  instead of proxying `kubectl exec` from their laptop. Lens/k9s also
+  work but make the OIDC integration awkward when teams use different
+  IdPs from the cluster.
+- **Flexibility.** Inject *any* image you can pull from a registry as
+  the debug container — `psql`, `redis-cli`, `dig`, your own forensic
+  tools. No special configuration on the target pod.
+- **Zero-trust.** The cluster's mesh policies still apply to the
+  ephemeral container: it only reaches what the target pod can reach.
+- **Corporate-identity friendly.** Authentication is enforced at the API
+  gateway (Envoy Gateway + OIDC). The cluster doesn't need to know your
+  corporate users; Porthole reads identity claims out of the JWT and
+  consults an OPA sidecar for authorization.
 
-## Authorization (OPA sidecar + Rego)
+## Architecture
 
-Each handler asks OPA for a yes/no decision before touching the kube API. OPA runs as a sidecar in the Porthole pod; the policy is mounted from a ConfigMap.
+Three diagrams, each at a different zoom level:
 
-| Env var | Example |
-|---|---|
-| `OPA_URL` | `http://localhost:8181/v1/data/porthole/authz/decision` |
+- [`docs/architecture.svg`](./docs/architecture.svg) — system layout:
+  browser → Envoy Gateway (+ OIDC) → Porthole → kube-apiserver → kubelet
+  → ephemeral container.
+- [`docs/traffic-flow.svg`](./docs/traffic-flow.svg) — byte paths
+  through an attach session: stdout, stdin, and resize travel three
+  distinct chains across the websocket, the k8s executor, the kubelet,
+  and the PTY.
+- [`docs/sequence.svg`](./docs/sequence.svg) — page load → discovery →
+  inject → attach → live session → close.
 
-When `OPA_URL` is unset Porthole allows everything (logged in the startup banner). That makes it safe to omit OPA for local dev — just don't forget to set it in production.
+## Authentication (JWT)
 
-### Input shape
+Porthole validates a JWT on every request. The token can come from:
+
+- `X-ID-Token` header (preferred — set by an upstream API gateway after
+  OIDC login)
+- `Authorization: Bearer <token>` (fallback — works with the
+  `forwardAccessToken` Envoy Gateway setting)
+
+| Env var          | Example |
+|------------------|---------|
+| `JWKS_URL`       | `http://keycloak/realms/porthole/protocol/openid-connect/certs` |
+| `OIDC_ISSUER`    | `http://keycloak/realms/porthole` |
+| `OIDC_AUDIENCE`  | _(optional)_ expected `aud` claim |
+| `AUTH_DISABLED`  | `true` to bypass JWT validation (local dev only) |
+
+The middleware uses the `keyfunc/v3` library, which pins each token to
+the algorithm declared in the JWKS — `alg:none` and HMAC-with-RSA-key
+confusion attacks are rejected at the library level.
+
+## Authorization (OPA)
+
+Every handler asks OPA for a yes/no decision before touching the kube
+API. OPA runs as a sidecar in the porthole pod; policy + data come from
+a ConfigMap (you can override it via chart values or by mounting your
+own bundle).
 
 ```json
 {
@@ -115,69 +154,92 @@ When `OPA_URL` is unset Porthole allows everything (logged in the startup banner
 }
 ```
 
-The action vocabulary is fixed (defined in `pkg/auth/opa.go` and the Rego both):
+The action vocabulary is fixed (in `pkg/auth/opa.go` + the Rego):
 
 - `list_namespaces`, `list_pods`, `list_ec`
-- `inject_ec`, `attach_ec`
+- `inject_ec`, `attach_ec`, `terminate_ec`
 
-### Policy shape
-
-`policy/data.json` defines two tables: **roles** (action bundles) and **bindings** (group → role → namespace scope).
+`policy/data.json` defines two tables: **roles** (action bundles) and
+**bindings** (group → role → namespace scope).
 
 ```json
 {
   "policy": {
     "roles": {
       "viewer":   ["list_namespaces", "list_pods", "list_ec"],
-      "debugger": ["list_namespaces", "list_pods", "list_ec", "inject_ec", "attach_ec"],
-      "admin":    ["list_namespaces", "list_pods", "list_ec", "inject_ec", "attach_ec"]
+      "debugger": ["list_namespaces", "list_pods", "list_ec",
+                   "inject_ec", "attach_ec", "terminate_ec"],
+      "admin":    ["list_namespaces", "list_pods", "list_ec",
+                   "inject_ec", "attach_ec", "terminate_ec"]
     },
     "bindings": [
       { "group": "porthole-admins", "role": "admin",    "namespace_glob": "*" },
       { "group": "team-a",          "role": "debugger", "namespace_glob": "team-a-*" },
-
       { "group": "secops",          "role": "debugger",
-        "namespace_labels": { "tier": "production" } },
-
-      { "group": "tenant-acme",     "role": "debugger",
-        "namespace_glob":   "tenant-*",
-        "namespace_labels": { "tenant": "acme" } },
-
-      { "group": "junior-devs",     "role": "debugger",
-        "namespace_glob":   "dev-*",
-        "business_hours":   true }
+        "namespace_labels": { "tier": "production" } }
     ]
   }
 }
 ```
 
-A binding may scope by **glob**, by **labels**, or by **both** (logical AND). Cluster-wide actions (`list_namespaces`) need an unconditional `namespace_glob: "*"` — a label-scoped binding cannot grant them, by design.
+A binding can scope by **glob**, by **namespace labels**, or by **both
+together** (logical AND). Cluster-wide actions (`list_namespaces`)
+require an unconditional `namespace_glob: "*"` — a label-scoped binding
+cannot grant them.
 
-`business_hours: true` restricts the binding to Mon-Fri 09:00–17:00 UTC.
-
-### Namespace labels
-
-When a request targets a namespace, Porthole looks up that namespace's labels (`pkg/authdata`, 60s TTL cache, fail-open) and includes them in the OPA input. That lets policies route by `tier=production`, `team=a`, or any other label your platform already stamps onto namespaces.
+`business_hours: true` on a binding restricts it to Mon-Fri 09:00–17:00
+UTC. Namespace labels are fetched lazily from the kube API and cached
+for 60s (`pkg/authdata`, fail-open).
 
 ### Editing the policy
 
 ```sh
 $EDITOR policy/porthole.rego policy/data.json
 make opa-eval         # 15-case local sanity check, no cluster required
-make opa-configmap    # regenerate deploy/opa/policy-configmap.yaml from policy/
-make opa-apply        # kubectl apply the ConfigMap; OPA hot-reloads
 ```
+
+In a helm-installed cluster, push the edited policy through chart
+values:
+
+```sh
+helm upgrade porthole ./helm-chart/porthole \
+  --reuse-values \
+  --set-file opa.policy=./policy/porthole.rego \
+  --set-file opa.data=./policy/data.json
+```
+
+OPA hot-reloads the mounted files; no pod restart needed.
+
+## Ephemeral container cleanup
+
+Kubernetes ephemeral containers are immutable — once added to a pod
+spec they stay forever. "Cleanup" therefore means terminating the
+running process so kubelet flips the EC status to `Terminated` and
+reclaims resources.
+
+Two surfaces:
+
+- **UI** — the **Clean up all** button on the EC bar terminates every
+  `porthole-*` running EC on the selected pod.
+- **Server-side sweeper** — set `EC_SWEEP_TTL=30m` (chart value
+  `ecSweepTTL`) and a background goroutine periodically terminates
+  porthole-injected ECs older than the TTL. Off by default.
+
+Porthole only ever touches ECs whose name starts with `porthole-`
+(the prefix `Inject` stamps). ECs created out-of-band are left alone.
 
 ## Audit log
 
-One structured `slog` JSON line per security-relevant decision, written to stdout. The schema lines up with the action constants — a SIEM rule keying off `action` catches every inject and every attach deny.
+One structured `slog` JSON line per security-relevant decision, written
+to stdout. Keys are stable across releases so a SIEM rule keyed on
+`action` catches every inject, attach-deny, and cleanup.
 
 ```json
 {
   "time":             "2026-06-07T10:53:45Z",
   "level":            "INFO|WARN",
-  "msg":              "inject|attach",
-  "action":           "inject|attach_ec",
+  "msg":              "inject|attach|cleanup",
+  "action":           "inject|attach_ec|terminate_ec",
   "user":             "<sub claim>",
   "source_ip":        "10.0.1.5",
   "namespace":        "demo",
@@ -186,41 +248,69 @@ One structured `slog` JSON line per security-relevant decision, written to stdou
   "duration_ms":      53,
   "outcome":          "success|error|denied",
   "debug_container":  "porthole-a2045e61",
-  "reason":           "default deny",
-  "error":            "denied: default deny"
+  "reason":           "default deny"
 }
 ```
 
-Successful attaches are intentionally not audited per-byte; the *start* of an attach session shows in gin's access log, and an authZ-deny on attach lands here as `outcome:"denied"` with the OPA reason.
+Successful attaches are intentionally not audited per-byte; the *start*
+of an attach session shows in gin's access log, and an authZ-deny on
+attach lands here as `outcome:"denied"` with the OPA reason.
 
 ## Configuration reference
 
-| Env var          | Default                  | What it does |
-|------------------|--------------------------|---|
-| `PORT`           | `8081`                   | Single HTTP port — SPA, REST, WS, all here. |
-| `AUTH_DISABLED`  | _(unset)_                | `true` → skip JWT validation, stamp a `local-dev` principal. |
-| `JWKS_URL`       | _(required)_             | Keycloak JWKS endpoint, used to validate inbound JWTs. |
-| `OIDC_ISSUER`    | _(optional)_             | Expected `iss` claim. Empty disables the check. |
-| `OIDC_AUDIENCE`  | _(optional)_             | Expected `aud` claim. Empty disables the check. |
-| `OPA_URL`        | _(unset → OPA disabled)_ | OPA decision endpoint, e.g. `http://localhost:8181/v1/data/porthole/authz/decision`. |
+| Env var               | Default                  | What it does |
+|-----------------------|--------------------------|---|
+| `PORT`                | `8081`                   | Single HTTP port — SPA, REST, WS, all here. |
+| `AUTH_DISABLED`       | _(unset)_                | `true` → skip JWT validation, stamp a `local-dev` principal. |
+| `JWKS_URL`            | _(required)_             | IdP JWKS endpoint, used to validate inbound JWTs. |
+| `OIDC_ISSUER`         | _(optional)_             | Expected `iss` claim. Empty disables the check. |
+| `OIDC_AUDIENCE`       | _(optional)_             | Expected `aud` claim. Empty disables the check. |
+| `OPA_URL`             | _(unset → OPA disabled)_ | OPA decision endpoint, e.g. `http://localhost:8181/v1/data/porthole/authz/decision`. |
+| `WS_ALLOWED_ORIGINS`  | _(unset → same-origin)_ | Comma-separated allowlist of `Origin` headers accepted for WS upgrades. Defends against CSWSH. |
+| `EC_SWEEP_TTL`        | _(unset → disabled)_     | Auto-terminate porthole-injected ECs older than this duration (e.g. `30m`). |
+
+## Repo layout
+
+```
+.
+├── main.go                 # single-port gin engine
+├── pkg/
+│   ├── controllers/        # HTTP/WS handlers (discovery, inject, attach, cleanup)
+│   ├── ephemeral/          # k8s patch + attach via remotecommand, + sweeper
+│   ├── util/               # WsSession (binary stdin + JSON-text control)
+│   ├── auth/               # JWT middleware + OPA client
+│   ├── authdata/           # cached ns-label lookups for OPA input
+│   ├── audit/              # one slog JSON line per inject/attach/cleanup
+│   ├── kubeconfig/         # in-cluster + ~/.kube fallback
+│   └── web/dist/           # embedded SPA (xterm.js, vanilla ES modules)
+├── policy/
+│   ├── porthole.rego       # authZ rules — groups × namespace × labels × time
+│   └── data.json           # roles + bindings
+├── helm-chart/porthole/    # canonical install path (chart)
+├── docs/
+│   ├── examples/           # ready-to-run example deployments
+│   │   ├── porthole/       # smallest install, no gateway
+│   │   └── envoy-gateway/  # full path with OIDC SecurityPolicy
+│   └── *.svg               # architecture diagrams
+├── deploy/                 # legacy ko-based manifests (superseded by the chart)
+├── scripts/
+│   ├── keycloak-bootstrap.sh  # idempotent realm/client/user setup via curl
+│   ├── envoy-smoke.sh         # ROPC + curl through the gateway
+│   └── opa-eval.sh            # 15 policy cases run locally
+└── Makefile
+```
 
 ## Development
 
 ```sh
-make build                # go build ./...
-make run-local            # go run . (uses your current kubectl context)
+go build ./...            # binary, sanity check
+go run .                  # uses your current kubectl context
 make opa-eval             # 15-case Rego sanity check
-make envoy-smoke          # ROPC against Keycloak → curl Porthole through the gateway
+helm lint helm-chart/porthole
+helm template porthole helm-chart/porthole -f docs/examples/porthole/values.yaml
 ```
 
-The SPA lives at `pkg/web/dist/` and is embedded into the binary via `pkg/web/embed.go`. Edit and re-`go build`; no separate frontend build step.
-
-## Roadmap
-
-- `forwardIDToken` instead of `forwardAccessToken` once Envoy Gateway implements it (`pkg/auth/jwt.go` already accepts `X-ID-Token`).
-- OPA bundle server instead of in-pod ConfigMap (signed bundles, central policy ops).
-- Resize-aware pod-side terminal (we already plumb client size; ANSI bracketed-paste / focus events next).
-- Optional non-TTY `/debug/exec` for one-shot programmatic use.
+The SPA lives at `pkg/web/dist/`. Edit, then re-`go build` to re-embed.
 
 ## Resources
 

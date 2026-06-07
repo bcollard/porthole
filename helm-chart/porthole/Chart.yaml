@@ -1,0 +1,18 @@
+apiVersion: v2
+name: porthole
+description: Web-based debug terminal for Kubernetes — inject and attach ephemeral debug containers from a browser, with OIDC + OPA authn/authz.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/bcollard/porthole
+sources:
+  - https://github.com/bcollard/porthole
+keywords:
+  - debug
+  - kubectl
+  - ephemeral-containers
+  - opa
+  - oidc
+maintainers:
+  - name: bcollard
+    url: https://github.com/bcollard

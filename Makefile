@@ -14,19 +14,12 @@ help: ## Show this help
 # Cluster lifecycle
 # ----------------------------------------------------------------------
 
-cluster-up: ## klimax: create the kind cluster
-	klimax cluster create $(CLUSTER)
-	kubectl config use-context $(CLUSTER)
+cluster-up: ## Create a kind cluster
+	kind create cluster --name $(CLUSTER)
+	kubectl config use-context kind-$(CLUSTER)
 
-cluster-down: ## klimax: delete the kind cluster
-	klimax cluster delete $(CLUSTER)
-
-# ----------------------------------------------------------------------
-# Subdomain + wildcard cert (one-time per laptop / GCP project)
-# ----------------------------------------------------------------------
-
-runlocal-bootstrap: ## Create bco.runlocal.dev DNS zone + wildcard cert + install secret
-	./scripts/runlocal-subdomain-bootstrap.sh
+cluster-down: ## Delete the kind cluster
+	kind delete cluster --name $(CLUSTER)
 
 # ----------------------------------------------------------------------
 # Porthole image + deploy (ko)
@@ -62,9 +55,9 @@ envoy-install: ## Install Envoy Gateway via Helm into envoy-gateway-system
 envoy-uninstall: ## Helm uninstall Envoy Gateway
 	helm uninstall eg -n envoy-gateway-system || true
 
-gateway-apply: ## Apply Gateway, HTTPRoute, SecurityPolicy
+gateway-apply: ## Apply legacy ko-based Gateway, HTTPRoute, SecurityPolicy. (Helm path: see docs/examples/envoy-gateway/)
 	@if ! kubectl get secret wildcard-bco-runlocal-dev >/dev/null 2>&1; then \
-	  echo "!! Missing TLS secret 'wildcard-bco-runlocal-dev'. Run 'make runlocal-bootstrap' first."; \
+	  echo "!! Missing TLS secret 'wildcard-bco-runlocal-dev'. See docs/private/scripts/runlocal-subdomain-bootstrap.sh."; \
 	  exit 1; \
 	fi
 	kubectl apply -f deploy/envoy-gateway/10-gateway.yaml
@@ -87,7 +80,7 @@ gateway-ip: ## Print the LoadBalancer IP assigned to the Envoy Gateway
 # Keycloak (managed instance)
 # ----------------------------------------------------------------------
 
-keycloak-bootstrap: ## Create realm + client + demo user in the managed Keycloak
+keycloak-bootstrap: ## Create realm + client + user in Keycloak (curl + Admin REST API). KEYCLOAK_URL env required.
 	./scripts/keycloak-bootstrap.sh
 
 # ----------------------------------------------------------------------
@@ -113,7 +106,7 @@ opa-configmap: ## Regenerate deploy/opa/policy-configmap.yaml from policy/*
 # End-to-end
 # ----------------------------------------------------------------------
 
-e2e: cluster-up runlocal-bootstrap envoy-install deploy keycloak-bootstrap ## Full setup (then apply secret.yaml + 'make gateway-apply')
+e2e: cluster-up envoy-install deploy keycloak-bootstrap ## Full ko-based deploy (then apply secret.yaml + 'make gateway-apply'). Helm path: see docs/examples/envoy-gateway/.
 	@echo "Now: cp deploy/envoy-gateway/secret.example.yaml deploy/envoy-gateway/secret.yaml"
 	@echo "      (paste client_secret from keycloak-bootstrap into secret.yaml)"
 	@echo "      kubectl apply -f deploy/envoy-gateway/secret.yaml"

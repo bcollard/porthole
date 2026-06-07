@@ -21,6 +21,7 @@ const (
 	ActionListEC         = "list_ec"
 	ActionInjectEC       = "inject_ec"
 	ActionAttachEC       = "attach_ec"
+	ActionTerminateEC    = "terminate_ec"
 )
 
 type opaClient struct {

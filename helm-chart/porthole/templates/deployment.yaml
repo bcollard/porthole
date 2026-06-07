@@ -1,0 +1,106 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "porthole.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "porthole.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicas }}
+  selector:
+    matchLabels:
+      {{- include "porthole.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "porthole.selectorLabels" . | nindent 8 }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "porthole.serviceAccountName" . }}
+      containers:
+        - name: porthole
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.extraArgs }}
+          args:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: 8081
+          env:
+            - name: PORT
+              value: "8081"
+            {{- if .Values.auth.disabled }}
+            - name: AUTH_DISABLED
+              value: "true"
+            {{- end }}
+            {{- if .Values.auth.jwksURL }}
+            - name: JWKS_URL
+              value: {{ .Values.auth.jwksURL | quote }}
+            {{- end }}
+            {{- if .Values.auth.issuer }}
+            - name: OIDC_ISSUER
+              value: {{ .Values.auth.issuer | quote }}
+            {{- end }}
+            {{- if .Values.auth.audience }}
+            - name: OIDC_AUDIENCE
+              value: {{ .Values.auth.audience | quote }}
+            {{- end }}
+            {{- if .Values.opa.enabled }}
+            - name: OPA_URL
+              value: {{ .Values.opa.url | quote }}
+            {{- end }}
+            {{- if .Values.wsAllowedOrigins }}
+            - name: WS_ALLOWED_ORIGINS
+              value: {{ .Values.wsAllowedOrigins | quote }}
+            {{- end }}
+            {{- if .Values.ecSweepTTL }}
+            - name: EC_SWEEP_TTL
+              value: {{ .Values.ecSweepTTL | quote }}
+            {{- end }}
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+        {{- if .Values.opa.enabled }}
+        - name: opa
+          image: "{{ .Values.opa.image.repository }}:{{ .Values.opa.image.tag }}"
+          imagePullPolicy: {{ .Values.opa.image.pullPolicy }}
+          args:
+            - "run"
+            - "--server"
+            - "--addr=0.0.0.0:8181"
+            - "--log-level=info"
+            - "/policies"
+          ports:
+            - name: opa
+              containerPort: 8181
+          readinessProbe:
+            httpGet: { path: /health, port: 8181 }
+          volumeMounts:
+            - name: opa-policy
+              mountPath: /policies
+              readOnly: true
+        {{- end }}
+      {{- if .Values.opa.enabled }}
+      volumes:
+        - name: opa-policy
+          configMap:
+            name: {{ include "porthole.opaConfigMapName" . }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

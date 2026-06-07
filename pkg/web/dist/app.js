@@ -232,6 +232,38 @@ function renderECBar() {
     }
     bar.appendChild(chip);
   }
+
+  // "Clean up all" only when there's at least one porthole-* running EC.
+  const cleanable = state.ecs.some(
+    (e) => e.Running && e.Name.startsWith("porthole-"),
+  );
+  if (cleanable) {
+    const btn = document.createElement("button");
+    btn.className = "ec-cleanup";
+    btn.title = "Terminate every porthole-injected ephemeral container in this pod";
+    btn.textContent = "Clean up all";
+    btn.addEventListener("click", () => cleanupPod());
+    bar.appendChild(btn);
+  }
+}
+
+async function cleanupPod() {
+  if (!state.selectedNs || !state.selectedPod) return;
+  const ns = state.selectedNs;
+  const pod = state.selectedPod;
+  closeWebsocket();
+  try {
+    const res = await http(
+      `/debug/cleanup/${encodeURIComponent(ns)}/${encodeURIComponent(pod)}`,
+      { method: "POST" },
+    );
+    const ok = (res.results || []).filter((r) => r.ok).length;
+    toast(`Terminated ${ok} ephemeral container${ok === 1 ? "" : "s"}`, "success");
+  } catch (e) {
+    toast("Cleanup failed: " + e.message, "error");
+  } finally {
+    await loadEphemeralContainers(ns, pod);
+  }
 }
 
 function updateTargetText() {
