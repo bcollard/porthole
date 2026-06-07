@@ -1,7 +1,12 @@
 package controllers
 
 import (
-	"fmt"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/bcollard/porthole/pkg/audit"
+	"github.com/bcollard/porthole/pkg/auth"
 	"github.com/bcollard/porthole/pkg/ephemeral"
 	"github.com/gin-gonic/gin"
 )
@@ -13,67 +18,118 @@ type InjectPayload struct {
 	Command   string `json:"command"`
 }
 
-type ExecPayload struct {
-	Namespace          string `json:"namespace" binding:"required"`
-	Pod                string `json:"pod" binding:"required"`
-	Command            string `json:"command" binding:"required"`
-	tty                bool   `json:"tty"`
-	ephemeralContainer string `json:"ephemeralContainer" binding:"required"`
-}
-
 type PodNamespacePayload struct {
 	Namespace string `json:"namespace" binding:"required"`
 	Pod       string `json:"pod" binding:"required"`
 }
 
-var image string = "pileenretard/busybox:1.2"
+const defaultDebugImage = "nicolaka/netshoot"
 
-func Inject(context *gin.Context) {
+// authDenyError lets the audit logger record an authZ deny as a real
+// error without mixing in the rest of the kube-error string matching.
+type authDenyError struct{ reason string }
+
+func (e *authDenyError) Error() string { return "denied: " + e.reason }
+func authDeny(reason string) error     { return &authDenyError{reason: reason} }
+
+func Inject(c *gin.Context) {
+	start := time.Now()
 	var payload InjectPayload
-	err := context.BindJSON(&payload)
-	if err != nil {
-		fmt.Errorf("error binding JSON: %v", err)
-		context.JSON(400, gin.H{
-			"message": "Invalid JSON",
-		})
+	if err := c.BindJSON(&payload); err != nil {
+		audit.LogInject(c, start, "", "", "", "", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON: " + err.Error()})
+		return
 	}
 	if payload.Image == "" {
-		payload.Image = image
+		payload.Image = defaultDebugImage
 	}
 
-	debugCtrName := ephemeral.Inject(context, payload.Namespace, payload.Pod, payload.Image, payload.Command)
+	if decision := auth.Authorize(c, auth.ActionInjectEC, payload.Namespace, payload.Pod); !decision.Allow {
+		denyErr := authDeny(decision.Reason)
+		audit.LogInject(c, start, payload.Namespace, payload.Pod, payload.Image, "", denyErr)
+		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden", "reason": decision.Reason})
+		return
+	}
 
-	context.JSON(200, gin.H{
-		"ns/pod":             payload.Namespace + "/" + payload.Pod,
+	debugCtrName, err := ephemeral.Inject(c, payload.Namespace, payload.Pod, payload.Image, payload.Command)
+	audit.LogInject(c, start, payload.Namespace, payload.Pod, payload.Image, debugCtrName, err)
+	if err != nil {
+		c.JSON(injectStatusFor(err), gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"namespace":          payload.Namespace,
+		"pod":                payload.Pod,
 		"debugContainerName": debugCtrName,
 	})
-
 }
 
-func Exec(context *gin.Context) {
-	context.JSON(200, gin.H{
-		"message": "Exec",
-	})
-}
-
-func List(context *gin.Context) {
-	var payload PodNamespacePayload
-	err := context.BindJSON(&payload)
-	if err != nil {
-		fmt.Errorf("error binding JSON: %v", err)
-		context.JSON(400, gin.H{
-			"message": "Invalid JSON",
-		})
+// injectStatusFor maps ephemeral.Inject errors to HTTP status codes. We
+// can't introspect wrapped k8s api errors trivially without dragging the
+// apierrors import here, so we string-match the kube error surface that
+// shows up most often — NotFound when the pod is gone, Forbidden when
+// RBAC denies the patch. Anything else is a 502 (upstream failure).
+func injectStatusFor(err error) int {
+	msg := err.Error()
+	switch {
+	case strings.Contains(msg, "namespace, pod and image are required"),
+		strings.Contains(msg, "has no containers to target"):
+		return http.StatusBadRequest
+	case strings.Contains(msg, "not found"):
+		return http.StatusNotFound
+	case strings.Contains(msg, "forbidden"):
+		return http.StatusForbidden
+	case strings.Contains(msg, "kube client:"):
+		return http.StatusInternalServerError
+	default:
+		return http.StatusBadGateway
 	}
+}
 
-	ecs := listEphemeralContainersForPod(context, payload.Namespace, payload.Pod)
+// List returns ephemeral containers for a pod identified by JSON body.
+// Kept for backward compat; new clients should use ListECByPath.
+func List(c *gin.Context) {
+	var payload PodNamespacePayload
+	if err := c.BindJSON(&payload); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON: " + err.Error()})
+		return
+	}
+	respondECList(c, payload.Namespace, payload.Pod)
+}
 
-	context.JSON(200, gin.H{
-		"ns/pod":              payload.Namespace + "/" + payload.Pod,
+// ListECByPath is the path-param variant used by the SPA.
+func ListECByPath(c *gin.Context) {
+	respondECList(c, c.Param("ns"), c.Param("pod"))
+}
+
+func respondECList(c *gin.Context, ns, pod string) {
+	if !auth.AuthorizeOrAbort(c, auth.ActionListEC, ns, pod) {
+		return
+	}
+	ecs, err := ephemeral.List(c, ns, pod)
+	if err != nil {
+		status := http.StatusBadGateway
+		if strings.Contains(err.Error(), "not found") {
+			status = http.StatusNotFound
+		} else if strings.Contains(err.Error(), "kube client:") {
+			status = http.StatusInternalServerError
+		}
+		c.JSON(status, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"namespace":           ns,
+		"pod":                 pod,
 		"ephemeralContainers": ecs,
 	})
 }
 
-func listEphemeralContainersForPod(context *gin.Context, ns string, pod string) []ephemeral.EphemeralContainer {
-	return ephemeral.List(context, ns, pod)
+// GetConfig returns runtime configuration for the SPA. The WS URL is
+// no longer advertised here — REST and WS share an origin now, so the
+// browser derives ws[s]://<window.location.host> on its own.
+func GetConfig(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{
+		"defaultImage": defaultDebugImage,
+	})
 }

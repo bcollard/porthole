@@ -1,0 +1,204 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1340 1240" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, system-ui, sans-serif">
+  <defs>
+    <style>
+      .bg          { fill: #0b0d12; }
+      .title       { fill: #e6e8ec; font-size: 22px; font-weight: 700; letter-spacing: 0.04em; }
+      .subtitle    { fill: #8b94a3; font-size: 13px; }
+      .lifeline    { stroke: #232a36; stroke-width: 1; stroke-dasharray: 3 4; }
+      .lane-box    { fill: #12151c; stroke-width: 1.5; }
+      .lane-name   { fill: #e6e8ec; font-size: 13px; font-weight: 600; text-anchor: middle; }
+      .lane-sub    { fill: #8b94a3; font-size: 10px; font-family: ui-monospace, "SF Mono", Menlo, monospace; text-anchor: middle; }
+      .section-bg  { fill: #1a1f29; }
+      .section-lbl { fill: #c084fc; font-size: 10px; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase; }
+      .msg-lbl     { fill: #e6e8ec; font-size: 11px; text-anchor: middle; }
+      .msg-mono    { fill: #6ea8fe; font-size: 11px; font-family: ui-monospace, "SF Mono", Menlo, monospace; text-anchor: middle; }
+      .msg-sub     { fill: #5d6573; font-size: 10px; font-style: italic; text-anchor: middle; }
+      .note        { fill: #fbbf24; font-size: 11px; }
+      .note-bg     { fill: #1a1f29; stroke: #fbbf24; stroke-width: 1; }
+    </style>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#6ea8fe"/>
+    </marker>
+    <marker id="arr-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#4ade80"/>
+    </marker>
+    <marker id="arr-magenta" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#c084fc"/>
+    </marker>
+    <marker id="arr-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#fbbf24"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" width="100%" height="100%"/>
+
+  <text class="title" x="40" y="46">Porthole — sequence diagram</text>
+  <text class="subtitle" x="40" y="70">End-to-end: page load → discovery → inject debugger → attach → live session → close</text>
+
+  <!-- ============ Lane headers ============ -->
+  <!-- L1=100  L2=280  L3=460  L4=660  L5=880  L6=1080 L7=1240 -->
+  <g>
+    <rect class="lane-box" x="40"   y="100" width="120" height="50" rx="6" stroke="#fbbf24"/>
+    <text class="lane-name" x="100" y="120">Browser</text>
+    <text class="lane-sub"  x="100" y="138">xterm.js · SPA</text>
+
+    <rect class="lane-box" x="220"  y="100" width="120" height="50" rx="6" stroke="#4ade80"/>
+    <text class="lane-name" x="280" y="120">Envoy GW</text>
+    <text class="lane-sub"  x="280" y="138">OIDC + JWT</text>
+
+    <rect class="lane-box" x="400"  y="100" width="120" height="50" rx="6" stroke="#6ea8fe"/>
+    <text class="lane-name" x="460" y="120">Porthole REST</text>
+    <text class="lane-sub"  x="460" y="138">:8081 / + SPA</text>
+
+    <rect class="lane-box" x="600"  y="100" width="120" height="50" rx="6" stroke="#6ea8fe"/>
+    <text class="lane-name" x="660" y="120">Porthole WS</text>
+    <text class="lane-sub"  x="660" y="138">:8081 /term/...</text>
+
+    <rect class="lane-box" x="820"  y="100" width="120" height="50" rx="6" stroke="#8b94a3"/>
+    <text class="lane-name" x="880" y="120">kube-apiserver</text>
+    <text class="lane-sub"  x="880" y="138">attach subresource</text>
+
+    <rect class="lane-box" x="1020" y="100" width="120" height="50" rx="6" stroke="#8b94a3"/>
+    <text class="lane-name" x="1080" y="120">kubelet</text>
+    <text class="lane-sub"  x="1080" y="138">CRI · PTY</text>
+
+    <rect class="lane-box" x="1180" y="100" width="120" height="50" rx="6" stroke="#4ade80"/>
+    <text class="lane-name" x="1240" y="120">EC</text>
+    <text class="lane-sub"  x="1240" y="138">ephemeral ctr</text>
+  </g>
+
+  <!-- ============ Lifelines (down to y=1200) ============ -->
+  <line class="lifeline" x1="100"  y1="150" x2="100"  y2="1200"/>
+  <line class="lifeline" x1="280"  y1="150" x2="280"  y2="1200"/>
+  <line class="lifeline" x1="460"  y1="150" x2="460"  y2="1200"/>
+  <line class="lifeline" x1="660"  y1="150" x2="660"  y2="1200"/>
+  <line class="lifeline" x1="880"  y1="150" x2="880"  y2="1200"/>
+  <line class="lifeline" x1="1080" y1="150" x2="1080" y2="1200"/>
+  <line class="lifeline" x1="1240" y1="150" x2="1240" y2="1200"/>
+
+  <!-- Prior-state note -->
+  <rect class="note-bg" x="40" y="166" width="1260" height="28" rx="4"/>
+  <text class="note" x="56" y="184">Prerequisite: the OIDC handshake (Envoy ↔ Keycloak ↔ Browser) has already established a session cookie. Every Browser→Envoy hop below carries it; Envoy strips it and forwards Authorization: Bearer &lt;id_token&gt; upstream.</text>
+
+  <!-- ============ SECTION: BOOTSTRAP ============ -->
+  <rect class="section-bg" x="40" y="210" width="1260" height="22" rx="3"/>
+  <text class="section-lbl" x="56" y="226">1 · Bootstrap</text>
+
+  <!-- msg 1: Browser → Envoy: GET /ui/ -->
+  <line x1="100" y1="262" x2="278" y2="262" stroke="#6ea8fe" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text class="msg-mono" x="190" y="256">GET /ui/</text>
+
+  <!-- msg 2: Envoy → REST: GET /ui/ + Bearer -->
+  <line x1="280" y1="302" x2="458" y2="302" stroke="#4ade80" stroke-width="1.5" marker-end="url(#arr-green)"/>
+  <text class="msg-mono" x="370" y="296">GET /ui/  + Authorization: Bearer …</text>
+
+  <!-- msg 3: REST → Envoy → Browser: 200 index.html, app.js, style.css -->
+  <line x1="460" y1="342" x2="102" y2="342" stroke="#6ea8fe" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text class="msg-mono" x="280" y="336">200 · index.html · app.js · style.css</text>
+
+  <!-- msg 4: Browser → REST: GET /api/config -->
+  <line x1="100" y1="382" x2="458" y2="382" stroke="#6ea8fe" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text class="msg-mono" x="280" y="376">GET /api/config  →  {wsBaseUrl, defaultImage}</text>
+
+  <!-- ============ SECTION: DISCOVERY ============ -->
+  <rect class="section-bg" x="40" y="405" width="1260" height="22" rx="3"/>
+  <text class="section-lbl" x="56" y="421">2 · Discovery</text>
+
+  <!-- msg 5: Browser → REST: GET /explore -->
+  <line x1="100" y1="455" x2="458" y2="455" stroke="#6ea8fe" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text class="msg-mono" x="280" y="449">GET /explore</text>
+  <!-- REST → API -->
+  <line x1="460" y1="478" x2="878" y2="478" stroke="#8b94a3" stroke-width="1.2" marker-end="url(#arr)" stroke-dasharray="4 3"/>
+  <text class="msg-sub" x="660" y="472">CoreV1().Namespaces().List()</text>
+
+  <!-- msg 6: Browser → REST: GET /explore/ns/:ns -->
+  <line x1="100" y1="510" x2="458" y2="510" stroke="#6ea8fe" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text class="msg-mono" x="280" y="504">GET /explore/ns/demo  →  ["target"]</text>
+
+  <!-- msg 7: Browser → REST: ec list -->
+  <line x1="100" y1="545" x2="458" y2="545" stroke="#6ea8fe" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text class="msg-mono" x="280" y="539">GET …/pods/target/ec  →  []</text>
+
+  <!-- ============ SECTION: INJECT ============ -->
+  <rect class="section-bg" x="40" y="570" width="1260" height="22" rx="3"/>
+  <text class="section-lbl" x="56" y="586">3 · Inject ephemeral debugger</text>
+
+  <!-- msg 8: Browser → REST: POST /debug/inject -->
+  <line x1="100" y1="620" x2="458" y2="620" stroke="#6ea8fe" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text class="msg-mono" x="280" y="614">POST /debug/inject  {pod, image}</text>
+
+  <!-- msg 9: REST → API: PATCH pod/ephemeralcontainers -->
+  <line x1="460" y1="652" x2="878" y2="652" stroke="#6ea8fe" stroke-width="1.2" marker-end="url(#arr)"/>
+  <text class="msg-mono" x="670" y="646">PATCH …/pods/target/ephemeralcontainers</text>
+
+  <!-- msg 10: API → kubelet → EC: start container -->
+  <line x1="880"  y1="685" x2="1078" y2="685" stroke="#8b94a3" stroke-width="1.2" marker-end="url(#arr)" stroke-dasharray="4 3"/>
+  <text class="msg-sub" x="980"  y="679">create container</text>
+  <line x1="1080" y1="685" x2="1238" y2="685" stroke="#4ade80" stroke-width="1.5" marker-end="url(#arr-green)"/>
+  <text class="msg-sub" x="1160" y="679">start</text>
+
+  <!-- msg 11: REST → Browser: debugContainerName -->
+  <line x1="460" y1="718" x2="102" y2="718" stroke="#6ea8fe" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text class="msg-mono" x="280" y="712">200 · {debugContainerName: "porthole-xxxx"}</text>
+
+  <!-- msg 11b: poll -->
+  <path d="M 100 750 C 130 750, 130 770, 100 770" fill="none" stroke="#fbbf24" stroke-width="1.2" marker-end="url(#arr-amber)"/>
+  <text class="msg-sub" x="150" y="760">poll …/ec every 1s until Running</text>
+
+  <!-- ============ SECTION: ATTACH ============ -->
+  <rect class="section-bg" x="40" y="790" width="1260" height="22" rx="3"/>
+  <text class="section-lbl" x="56" y="806">4 · Attach websocket</text>
+
+  <!-- msg 12: Browser → WS: Upgrade /term -->
+  <line x1="100" y1="840" x2="658" y2="840" stroke="#6ea8fe" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text class="msg-mono" x="380" y="834">WS Upgrade  /term/demo/target/porthole-xxxx</text>
+
+  <!-- msg 13: WS → API: POST attach (SPDY/WS) -->
+  <line x1="660" y1="872" x2="878" y2="872" stroke="#6ea8fe" stroke-width="1.5" marker-end="url(#arr)" stroke-dasharray="6 4"/>
+  <text class="msg-mono" x="770" y="866">POST …/attach  (SPDY ↔ WS fallback)</text>
+
+  <!-- msg 14: API → kubelet → EC: PTY attach -->
+  <line x1="880"  y1="904" x2="1078" y2="904" stroke="#8b94a3" stroke-width="1.2" marker-end="url(#arr)" stroke-dasharray="4 3"/>
+  <text class="msg-sub" x="980"  y="898">CRI stream</text>
+  <line x1="1080" y1="904" x2="1238" y2="904" stroke="#4ade80" stroke-width="1.5" marker-end="url(#arr-green)" stroke-dasharray="4 3"/>
+  <text class="msg-sub" x="1160" y="898">PTY connected</text>
+
+  <!-- msg 15: Browser → WS: initial resize -->
+  <line x1="100" y1="940" x2="658" y2="940" stroke="#fbbf24" stroke-width="1.5" marker-end="url(#arr-amber)"/>
+  <text class="msg-mono" x="380" y="934">TEXT  {"type":"resize","cols":120,"rows":30}</text>
+
+  <!-- msg 16: WS → API → kubelet: SIGWINCH -->
+  <line x1="660"  y1="970" x2="1078" y2="970" stroke="#fbbf24" stroke-width="1.2" marker-end="url(#arr-amber)" stroke-dasharray="4 3"/>
+  <text class="msg-sub" x="870" y="964">TerminalSizeQueue.Next() → SIGWINCH</text>
+
+  <!-- ============ SECTION: LIVE ============ -->
+  <rect class="section-bg" x="40" y="995" width="1260" height="22" rx="3"/>
+  <text class="section-lbl" x="56" y="1011">5 · Live terminal session</text>
+
+  <!-- msg 17: Browser → WS: binary stdin -->
+  <line x1="100" y1="1045" x2="658" y2="1045" stroke="#6ea8fe" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text class="msg-mono" x="380" y="1039">BIN  "ls\n"  (Uint8Array)</text>
+
+  <!-- msg 17b: pipe -->
+  <line x1="660" y1="1070" x2="1238" y2="1070" stroke="#8b94a3" stroke-width="1.2" marker-end="url(#arr)" stroke-dasharray="4 3"/>
+  <text class="msg-sub" x="950" y="1064">io.Pipe → StreamOptions.Stdin → kubelet → process</text>
+
+  <!-- msg 18: process → ... → Browser: stdout binary -->
+  <line x1="1240" y1="1102" x2="660" y2="1102" stroke="#4ade80" stroke-width="1.5" marker-end="url(#arr-green)"/>
+  <text class="msg-mono" x="950" y="1096">process stdout  →  WsWriter</text>
+  <line x1="660" y1="1124" x2="102" y2="1124" stroke="#4ade80" stroke-width="1.5" marker-end="url(#arr-green)"/>
+  <text class="msg-mono" x="380" y="1118">BIN  →  term.write(Uint8Array)</text>
+
+  <!-- ============ SECTION: CLOSE ============ -->
+  <rect class="section-bg" x="40" y="1150" width="1260" height="22" rx="3"/>
+  <text class="section-lbl" x="56" y="1166">6 · Disconnect</text>
+
+  <!-- msg 19: Browser closes WS -->
+  <line x1="100" y1="1198" x2="658" y2="1198" stroke="#f87171" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text class="msg-mono" x="380" y="1192" fill="#f87171">WS close   ·   ws.close()</text>
+
+  <!-- msg 20: WS cancels exec ctx → SPDY closed; EC stays running -->
+  <line x1="660" y1="1226" x2="1078" y2="1226" stroke="#f87171" stroke-width="1.2" marker-end="url(#arr)" stroke-dasharray="4 3"/>
+  <text class="msg-sub" x="870" y="1220">streamingCtx cancelled → stream closed · EC keeps running</text>
+</svg>

@@ -1,0 +1,73 @@
+apiVersion: v1
+data:
+  data.json: |
+    {
+      "policy": {
+        "roles": {
+          "viewer":   ["list_namespaces", "list_pods", "list_ec"],
+          "debugger": ["list_namespaces", "list_pods", "list_ec", "inject_ec", "attach_ec"],
+          "admin":    ["list_namespaces", "list_pods", "list_ec", "inject_ec", "attach_ec"]
+        },
+        "bindings": [
+          {"group": "porthole-admins",    "role": "admin",    "namespace_glob": "*"},
+          {"group": "porthole-debuggers", "role": "debugger", "namespace_glob": "*"},
+          {"group": "porthole-viewers",   "role": "viewer",   "namespace_glob": "*"},
+
+          {"group": "team-a", "role": "debugger", "namespace_glob": "team-a-*"},
+          {"group": "team-b", "role": "debugger", "namespace_glob": "team-b-*"},
+
+          {"group": "secops",
+           "role": "debugger",
+           "namespace_labels": {"tier": "production"}},
+
+          {"group": "tenant-acme",
+           "role": "debugger",
+           "namespace_glob": "tenant-*",
+           "namespace_labels": {"tenant": "acme"}},
+
+          {"group": "junior-devs",
+           "role": "debugger",
+           "namespace_glob": "dev-*",
+           "business_hours": true},
+
+          {"group": "local-dev", "role": "admin", "namespace_glob": "*"}
+        ]
+      }
+    }
+  porthole.rego: "# Porthole authorization policy.\n#\n# Input shape (from pkg/auth/opa.go):\n#
+    \  {\n#     \"input\": {\n#       \"user\":             { \"sub\": \"...\", \"email\":
+    \"...\", \"groups\": [\"...\"] },\n#       \"request\":          { \"action\":
+    \"inject_ec\", \"namespace\": \"demo\", \"pod\": \"target\" },\n#       \"now\":
+    \             \"2026-06-07T14:00:00Z\",\n#       \"namespace_labels\": { \"team\":
+    \"a\", \"tier\": \"production\", ... }\n#     }\n#   }\n#\n# A binding constrains
+    the namespace using `namespace_glob`,\n# `namespace_labels`, or both. When both
+    are present, BOTH must match\n# (logical AND) — this avoids the loose-grant footgun
+    where a glob\n# accidentally widens a labels-scoped binding.\n#\n# Cluster-wide
+    actions (list_namespaces) come with namespace == \"\" and\n# no labels. They are
+    gated by `namespace_glob == \"*\"` *only* — a\n# label-scoped binding cannot grant
+    cluster-wide access.\npackage porthole.authz\n\nimport future.keywords.every\nimport
+    future.keywords.if\nimport future.keywords.in\n\ndefault decision := {\"allow\":
+    false, \"reason\": \"default deny\"}\n\ndecision := {\"allow\": true, \"reason\":
+    reason} if {\n\tsome binding in data.policy.bindings\n\tbinding.group in input.user.groups\n\tmatches_namespace(binding,
+    input.request.namespace)\n\tinput.request.action in data.policy.roles[binding.role]\n\tnot
+    violates_time_window(binding)\n\treason := sprintf(\"matched: group=%v role=%v
+    ns=%v\", [\n\t\tbinding.group, binding.role, input.request.namespace,\n\t])\n}\n\n#
+    Cluster-wide actions: namespace == \"\". Only an unconditional \"*\"\n# glob covers
+    them; bindings with label constraints do not.\nmatches_namespace(binding, ns)
+    if {\n\tns == \"\"\n\tbinding.namespace_glob == \"*\"\n\tnot binding.namespace_labels\n}\n\n#
+    Namespaced actions: any specified glob AND any specified labels\n# must both hold.
+    A binding with neither (no glob, no labels) is a\n# config error and matches nothing.\nmatches_namespace(binding,
+    ns) if {\n\tns != \"\"\n\thas_namespace_constraint(binding)\n\tglob_constraint_met(binding,
+    ns)\n\tlabels_constraint_met(binding)\n}\n\nhas_namespace_constraint(binding)
+    if binding.namespace_glob\nhas_namespace_constraint(binding) if binding.namespace_labels\n\nglob_constraint_met(binding,
+    _) if not binding.namespace_glob\nglob_constraint_met(binding, ns) if {\n\tbinding.namespace_glob\n\tglob.match(binding.namespace_glob,
+    [], ns)\n}\n\nlabels_constraint_met(binding) if not binding.namespace_labels\nlabels_constraint_met(binding)
+    if {\n\tbinding.namespace_labels\n\tevery k, v in binding.namespace_labels {\n\t\tinput.namespace_labels[k]
+    == v\n\t}\n}\n\n# A binding may opt in to business-hours-only enforcement.\nviolates_time_window(binding)
+    if {\n\tbinding.business_hours == true\n\tweekday_now in {\"Saturday\", \"Sunday\"}\n}\n\nviolates_time_window(binding)
+    if {\n\tbinding.business_hours == true\n\thour_now < 9\n}\n\nviolates_time_window(binding)
+    if {\n\tbinding.business_hours == true\n\thour_now >= 17\n}\n\nnow_ns := time.parse_rfc3339_ns(input.now)\n\nweekday_now
+    := w if {\n\tw := time.weekday(now_ns)\n}\n\nhour_now := h if {\n\th := time.clock(now_ns)[0]\n}\n"
+kind: ConfigMap
+metadata:
+  name: porthole-opa-policy

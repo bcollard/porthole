@@ -1,0 +1,235 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1380 880" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, system-ui, sans-serif">
+  <defs>
+    <style>
+      .bg          { fill: #0b0d12; }
+      .title       { fill: #e6e8ec; font-size: 22px; font-weight: 700; letter-spacing: 0.04em; }
+      .subtitle    { fill: #8b94a3; font-size: 13px; }
+      .row-lbl     { font-size: 12px; font-weight: 700; letter-spacing: 0.18em; }
+      .row-sublbl  { fill: #8b94a3; font-size: 11px; }
+      .box         { fill: #12151c; }
+      .box-name    { fill: #e6e8ec; font-size: 11px; font-weight: 600; text-anchor: middle; }
+      .box-code    { fill: #8b94a3; font-size: 10px; font-family: ui-monospace, "SF Mono", Menlo, monospace; text-anchor: middle; }
+      .scope-lbl   { fill: #5d6573; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; }
+      .scope-line  { stroke: #232a36; stroke-width: 1; stroke-dasharray: 3 3; }
+      .caption     { fill: #8b94a3; font-size: 12px; }
+      .caption-mono{ fill: #6ea8fe; font-size: 12px; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+    </style>
+    <marker id="ag" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#4ade80"/>
+    </marker>
+    <marker id="ab" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#6ea8fe"/>
+    </marker>
+    <marker id="aa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#fbbf24"/>
+    </marker>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000" flood-opacity="0.5"/>
+    </filter>
+  </defs>
+
+  <rect class="bg" width="100%" height="100%"/>
+
+  <text class="title" x="40" y="46">Porthole — byte paths through an attach session</text>
+  <text class="subtitle" x="40" y="70">Three independent flows multiplexed on a single websocket: stdout (binary), stdin (binary), resize (JSON text frame)</text>
+
+  <!-- scope bands -->
+  <text class="scope-lbl" x="40"   y="124">Browser</text>
+  <line  class="scope-line" x1="120" y1="120" x2="305" y2="120"/>
+  <text class="scope-lbl" x="320"  y="124">Network</text>
+  <line  class="scope-line" x1="400" y1="120" x2="460" y2="120"/>
+  <text class="scope-lbl" x="470"  y="124">Porthole</text>
+  <line  class="scope-line" x1="555" y1="120" x2="940" y2="120"/>
+  <text class="scope-lbl" x="955"  y="124">Kubernetes</text>
+  <line  class="scope-line" x1="1050" y1="120" x2="1340" y2="120"/>
+
+  <!-- ============ OUTPUT row ============ -->
+  <text class="row-lbl"    x="40" y="180" fill="#4ade80">OUTPUT</text>
+  <text class="row-sublbl" x="40" y="198">stdout</text>
+  <text class="row-sublbl" x="40" y="214">PTY → browser</text>
+
+  <!-- 8 boxes for OUTPUT, x positions 140 + i*150, y=170 -->
+  <g filter="url(#shadow)">
+    <rect class="box" x="1190" y="170" width="160" height="74" rx="6" stroke="#4ade80" stroke-width="1.5"/>
+    <text class="box-name" x="1270" y="194">process stdout</text>
+    <text class="box-code" x="1270" y="212">write(1, …)</text>
+    <text class="box-code" x="1270" y="228" fill="#5d6573">inside EC</text>
+
+    <rect class="box" x="1050" y="170" width="120" height="74" rx="6" stroke="#4ade80" stroke-width="1.5"/>
+    <text class="box-name" x="1110" y="194">PTY master</text>
+    <text class="box-code" x="1110" y="212">/dev/pts/N</text>
+
+    <rect class="box" x="920" y="170" width="110" height="74" rx="6" stroke="#4ade80" stroke-width="1.5"/>
+    <text class="box-name" x="975" y="194">kubelet</text>
+    <text class="box-code" x="975" y="212">CRI stream</text>
+
+    <rect class="box" x="780" y="170" width="120" height="74" rx="6" stroke="#4ade80" stroke-width="1.5"/>
+    <text class="box-name" x="840" y="194">kube-apiserver</text>
+    <text class="box-code" x="840" y="212">.../attach</text>
+
+    <rect class="box" x="620" y="170" width="140" height="74" rx="6" stroke="#4ade80" stroke-width="1.5"/>
+    <text class="box-name" x="690" y="194">remotecommand</text>
+    <text class="box-code" x="690" y="208">exec.StreamOptions</text>
+    <text class="box-code" x="690" y="222">.Stdout</text>
+
+    <rect class="box" x="465" y="170" width="135" height="74" rx="6" stroke="#4ade80" stroke-width="1.5"/>
+    <text class="box-name" x="532" y="194">util.WsWriter</text>
+    <text class="box-code" x="532" y="208">conn.WriteMessage</text>
+    <text class="box-code" x="532" y="222">(BinaryMessage, p)</text>
+
+    <rect class="box" x="320" y="170" width="120" height="74" rx="6" stroke="#4ade80" stroke-width="1.5"/>
+    <text class="box-name" x="380" y="194">WebSocket</text>
+    <text class="box-code" x="380" y="212">binary frame</text>
+
+    <rect class="box" x="140" y="170" width="160" height="74" rx="6" stroke="#4ade80" stroke-width="1.5"/>
+    <text class="box-name" x="220" y="190">xterm.write</text>
+    <text class="box-code" x="220" y="206">ws.onmessage</text>
+    <text class="box-code" x="220" y="222">(Uint8Array)</text>
+  </g>
+  <!-- Arrows OUTPUT: right → left, so arrow tail on right box, head pointing left -->
+  <path d="M 1190 207 L 1170 207" stroke="#4ade80" stroke-width="1.5" fill="none" marker-end="url(#ag)"/>
+  <path d="M 1050 207 L 1030 207" stroke="#4ade80" stroke-width="1.5" fill="none" marker-end="url(#ag)"/>
+  <path d="M  920 207 L  900 207" stroke="#4ade80" stroke-width="1.5" fill="none" marker-end="url(#ag)"/>
+  <path d="M  780 207 L  760 207" stroke="#4ade80" stroke-width="1.5" fill="none" marker-end="url(#ag)"/>
+  <path d="M  620 207 L  600 207" stroke="#4ade80" stroke-width="1.5" fill="none" marker-end="url(#ag)"/>
+  <path d="M  465 207 L  440 207" stroke="#4ade80" stroke-width="1.5" fill="none" marker-end="url(#ag)"/>
+  <path d="M  320 207 L  300 207" stroke="#4ade80" stroke-width="1.5" fill="none" marker-end="url(#ag)"/>
+
+  <!-- ============ INPUT row ============ -->
+  <text class="row-lbl"    x="40" y="370" fill="#6ea8fe">INPUT</text>
+  <text class="row-sublbl" x="40" y="388">stdin</text>
+  <text class="row-sublbl" x="40" y="404">browser → PTY</text>
+
+  <g filter="url(#shadow)">
+    <rect class="box" x="140" y="360" width="160" height="74" rx="6" stroke="#6ea8fe" stroke-width="1.5"/>
+    <text class="box-name" x="220" y="384">term.onData</text>
+    <text class="box-code" x="220" y="400">keystrokes</text>
+    <text class="box-code" x="220" y="416">(string)</text>
+
+    <rect class="box" x="320" y="360" width="120" height="74" rx="6" stroke="#6ea8fe" stroke-width="1.5"/>
+    <text class="box-name" x="380" y="380">TextEncoder</text>
+    <text class="box-code" x="380" y="396">.encode(s)</text>
+    <text class="box-code" x="380" y="414" fill="#5d6573">→ Uint8Array</text>
+
+    <rect class="box" x="465" y="360" width="135" height="74" rx="6" stroke="#6ea8fe" stroke-width="1.5"/>
+    <text class="box-name" x="532" y="384">ws.send</text>
+    <text class="box-code" x="532" y="400">binary frame</text>
+    <text class="box-code" x="532" y="416">(reserved for stdin)</text>
+
+    <rect class="box" x="620" y="360" width="140" height="74" rx="6" stroke="#6ea8fe" stroke-width="1.5"/>
+    <text class="box-name" x="690" y="384">util.WsSession</text>
+    <text class="box-code" x="690" y="400">dispatch</text>
+    <text class="box-code" x="690" y="416">BinaryMessage</text>
+
+    <rect class="box" x="780" y="360" width="120" height="74" rx="6" stroke="#6ea8fe" stroke-width="1.5"/>
+    <text class="box-name" x="840" y="384">io.Pipe</text>
+    <text class="box-code" x="840" y="400">writer</text>
+    <text class="box-code" x="840" y="416" fill="#5d6573">unbounded</text>
+
+    <rect class="box" x="920" y="360" width="160" height="74" rx="6" stroke="#6ea8fe" stroke-width="1.5"/>
+    <text class="box-name" x="1000" y="384">StreamOptions</text>
+    <text class="box-code" x="1000" y="400">.Stdin =</text>
+    <text class="box-code" x="1000" y="416">io.PipeReader</text>
+
+    <rect class="box" x="1100" y="360" width="110" height="74" rx="6" stroke="#6ea8fe" stroke-width="1.5"/>
+    <text class="box-name" x="1155" y="384">kube/kubelet</text>
+    <text class="box-code" x="1155" y="400">attach</text>
+    <text class="box-code" x="1155" y="416" fill="#5d6573">SPDY/WS</text>
+
+    <rect class="box" x="1230" y="360" width="120" height="74" rx="6" stroke="#6ea8fe" stroke-width="1.5"/>
+    <text class="box-name" x="1290" y="384">PTY → process</text>
+    <text class="box-code" x="1290" y="402">read(0)</text>
+  </g>
+  <path d="M  300 397 L  320 397" stroke="#6ea8fe" stroke-width="1.5" fill="none" marker-end="url(#ab)"/>
+  <path d="M  440 397 L  465 397" stroke="#6ea8fe" stroke-width="1.5" fill="none" marker-end="url(#ab)"/>
+  <path d="M  600 397 L  620 397" stroke="#6ea8fe" stroke-width="1.5" fill="none" marker-end="url(#ab)"/>
+  <path d="M  760 397 L  780 397" stroke="#6ea8fe" stroke-width="1.5" fill="none" marker-end="url(#ab)"/>
+  <path d="M  900 397 L  920 397" stroke="#6ea8fe" stroke-width="1.5" fill="none" marker-end="url(#ab)"/>
+  <path d="M 1080 397 L 1100 397" stroke="#6ea8fe" stroke-width="1.5" fill="none" marker-end="url(#ab)"/>
+  <path d="M 1210 397 L 1230 397" stroke="#6ea8fe" stroke-width="1.5" fill="none" marker-end="url(#ab)"/>
+
+  <!-- ============ RESIZE row ============ -->
+  <text class="row-lbl"    x="40" y="560" fill="#fbbf24">RESIZE</text>
+  <text class="row-sublbl" x="40" y="578">terminal size</text>
+  <text class="row-sublbl" x="40" y="594">control frame</text>
+
+  <g filter="url(#shadow)">
+    <rect class="box" x="140" y="550" width="160" height="74" rx="6" stroke="#fbbf24" stroke-width="1.5"/>
+    <text class="box-name" x="220" y="574">term.onResize</text>
+    <text class="box-code" x="220" y="590">{cols, rows}</text>
+    <text class="box-code" x="220" y="606" fill="#5d6573">FitAddon</text>
+
+    <rect class="box" x="320" y="550" width="120" height="74" rx="6" stroke="#fbbf24" stroke-width="1.5"/>
+    <text class="box-name" x="380" y="574">ws.send</text>
+    <text class="box-code" x="380" y="590">text frame</text>
+    <text class="box-code" x="380" y="606">JSON</text>
+
+    <rect class="box" x="465" y="550" width="135" height="74" rx="6" stroke="#fbbf24" stroke-width="1.5"/>
+    <text class="box-name" x="532" y="574">util.WsSession</text>
+    <text class="box-code" x="532" y="590">TextMessage</text>
+    <text class="box-code" x="532" y="606" fill="#5d6573">json.Unmarshal</text>
+
+    <rect class="box" x="620" y="550" width="140" height="74" rx="6" stroke="#fbbf24" stroke-width="1.5"/>
+    <text class="box-name" x="690" y="574">resize chan</text>
+    <text class="box-code" x="690" y="590">TerminalSize</text>
+    <text class="box-code" x="690" y="606" fill="#5d6573">coalesced, drop-old</text>
+
+    <rect class="box" x="780" y="550" width="120" height="74" rx="6" stroke="#fbbf24" stroke-width="1.5"/>
+    <text class="box-name" x="840" y="574">chanSizeQueue</text>
+    <text class="box-code" x="840" y="590">.Next()</text>
+    <text class="box-code" x="840" y="606" fill="#5d6573">blocking pop</text>
+
+    <rect class="box" x="920" y="550" width="160" height="74" rx="6" stroke="#fbbf24" stroke-width="1.5"/>
+    <text class="box-name" x="1000" y="574">StreamOptions</text>
+    <text class="box-code" x="1000" y="590">.TerminalSize</text>
+    <text class="box-code" x="1000" y="606">Queue</text>
+
+    <rect class="box" x="1100" y="550" width="110" height="74" rx="6" stroke="#fbbf24" stroke-width="1.5"/>
+    <text class="box-name" x="1155" y="574">kube/kubelet</text>
+    <text class="box-code" x="1155" y="590">resize</text>
+    <text class="box-code" x="1155" y="606" fill="#5d6573">channel msg</text>
+
+    <rect class="box" x="1230" y="550" width="120" height="74" rx="6" stroke="#fbbf24" stroke-width="1.5"/>
+    <text class="box-name" x="1290" y="574">PTY</text>
+    <text class="box-code" x="1290" y="590">TIOCSWINSZ</text>
+    <text class="box-code" x="1290" y="606" fill="#5d6573">+ SIGWINCH</text>
+  </g>
+  <path d="M  300 587 L  320 587" stroke="#fbbf24" stroke-width="1.5" fill="none" marker-end="url(#aa)"/>
+  <path d="M  440 587 L  465 587" stroke="#fbbf24" stroke-width="1.5" fill="none" marker-end="url(#aa)"/>
+  <path d="M  600 587 L  620 587" stroke="#fbbf24" stroke-width="1.5" fill="none" marker-end="url(#aa)"/>
+  <path d="M  760 587 L  780 587" stroke="#fbbf24" stroke-width="1.5" fill="none" marker-end="url(#aa)"/>
+  <path d="M  900 587 L  920 587" stroke="#fbbf24" stroke-width="1.5" fill="none" marker-end="url(#aa)"/>
+  <path d="M 1080 587 L 1100 587" stroke="#fbbf24" stroke-width="1.5" fill="none" marker-end="url(#aa)"/>
+  <path d="M 1210 587 L 1230 587" stroke="#fbbf24" stroke-width="1.5" fill="none" marker-end="url(#aa)"/>
+
+  <!-- ============ Caption block ============ -->
+  <text class="row-lbl" x="40" y="710" fill="#e6e8ec">PROTOCOL CONTRACT</text>
+
+  <g transform="translate(40, 738)">
+    <circle cx="6" cy="-3" r="4" fill="#4ade80"/>
+    <text class="caption" x="20" y="0">All <tspan class="caption-mono">stdout</tspan> bytes flow from kubelet back as websocket <tspan class="caption-mono">BinaryMessage</tspan> frames.</text>
+  </g>
+  <g transform="translate(40, 762)">
+    <circle cx="6" cy="-3" r="4" fill="#6ea8fe"/>
+    <text class="caption" x="20" y="0">All <tspan class="caption-mono">stdin</tspan> keystrokes are encoded to UTF-8 and sent as <tspan class="caption-mono">BinaryMessage</tspan> — never as text frames.</text>
+  </g>
+  <g transform="translate(40, 786)">
+    <circle cx="6" cy="-3" r="4" fill="#fbbf24"/>
+    <text class="caption" x="20" y="0">Resize is the only thing that travels as <tspan class="caption-mono">TextMessage</tspan>: <tspan class="caption-mono">{"type":"resize","cols":N,"rows":M}</tspan>. Future control verbs piggyback on the same channel.</text>
+  </g>
+  <g transform="translate(40, 810)">
+    <circle cx="6" cy="-3" r="4" fill="#8b94a3"/>
+    <text class="caption" x="20" y="0">Server splits frames by type at <tspan class="caption-mono">WsSession.Start</tspan>; binary fills an <tspan class="caption-mono">io.Pipe</tspan>; text events go onto a buffered channel adapted into <tspan class="caption-mono">remotecommand.TerminalSizeQueue</tspan>.</text>
+  </g>
+
+  <!-- Why-it-matters callout (right side bottom) -->
+  <g transform="translate(820, 720)">
+    <rect width="520" height="120" rx="8" fill="#12151c" stroke="#232a36"/>
+    <text class="row-lbl" x="20" y="28" fill="#c084fc">WHY THIS LAYOUT</text>
+    <text class="caption" x="20" y="52">A single in-band <tspan class="caption-mono">io.Pipe</tspan> means there is one Goroutine boundary</text>
+    <text class="caption" x="20" y="70">between the WS reader and the k8s executor — back-pressure is</text>
+    <text class="caption" x="20" y="88">natural, and closing the pipe is enough to tear the executor down.</text>
+    <text class="caption" x="20" y="106">The resize chan is separate so a slow consumer can drop intermediates.</text>
+  </g>
+</svg>

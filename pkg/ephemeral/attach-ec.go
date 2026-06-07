@@ -1,13 +1,14 @@
 package ephemeral
 
 import (
-	"bufio"
 	"context"
 	"fmt"
+	"net/url"
+	"time"
+
 	"github.com/bcollard/porthole/pkg/kubeconfig"
 	"github.com/bcollard/porthole/pkg/util"
 	"github.com/gin-gonic/gin"
-	"io"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -22,30 +23,41 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/remotecommand"
 	watchtools "k8s.io/client-go/tools/watch"
-	"net/url"
-	"time"
 )
 
-func Attach(ctx *gin.Context, ns string, podName string, debuggerName string, streamz util.Streamz, tty bool) {
+// Attach attaches to an ephemeral debugger container's TTY. The
+// streamz carries stdin/stdout/stderr, and resize (optional) receives
+// terminal-size updates from the client. If resize is nil, the PTY
+// stays at whatever size the kubelet defaults to.
+func Attach(
+	ctx *gin.Context,
+	ns string,
+	podName string,
+	debuggerName string,
+	streamz util.Streamz,
+	resize <-chan util.TerminalSize,
+	tty bool,
+) {
 	client, config, err := kubeconfig.GetKubClient()
 	if err != nil {
-		fmt.Errorf("error getting Kubernetes client: %v", err)
+		fmt.Printf("error getting Kubernetes client: %v\n", err)
+		return
 	}
 
 	fmt.Printf("Waiting for debugger container...\n")
 	pod, err := waitForContainer(ctx, client, ns, podName, debuggerName, true)
 	if err != nil {
-		panic(err)
+		fmt.Printf("error waiting for debugger container: %v\n", err)
+		return
 	}
 
 	debuggerContainer := ephemeralContainerByName(pod, debuggerName)
 	if debuggerContainer == nil {
-		fmt.Errorf("cannot find debugger container %q in pod %q", debuggerName, podName)
-		panic(err)
+		fmt.Printf("cannot find debugger container %q in pod %q\n", debuggerName, podName)
+		return
 	}
 
 	fmt.Printf("Attaching to debugger container...\n")
-	fmt.Printf("If you don't see a command prompt, try pressing enter.\n")
 	req := client.CoreV1().RESTClient().
 		Post().
 		Resource("pods").
@@ -66,17 +78,32 @@ func Attach(ctx *gin.Context, ns string, podName string, debuggerName string, st
 	// if container dies, stop streaming
 	go func() {
 		_, _ = waitForContainer(ctx, client, ns, podName, debuggerName, false)
-		// Debugger container is not running anymore - streaming no longer needed.
 		cancelStreamingCtx()
 	}()
 
-	if err := stream(streamingCtx, streamz, req.URL(), config, tty); err != nil {
-		fmt.Printf("error streaming to/from debugger container: %v", err)
+	var queue remotecommand.TerminalSizeQueue
+	if resize != nil {
+		queue = &chanSizeQueue{ch: resize}
 	}
 
-	if err := dumpDebuggerLogs(ctx, client, ns, podName, debuggerName, ctx.Writer); err != nil {
-		fmt.Printf("error dumping debugger logs: %v", err)
+	if err := stream(streamingCtx, streamz, req.URL(), config, tty, queue); err != nil {
+		fmt.Printf("error streaming to/from debugger container: %v\n", err)
 	}
+}
+
+// chanSizeQueue adapts a <-chan util.TerminalSize to
+// remotecommand.TerminalSizeQueue. Next returns nil when the channel
+// closes, signalling the executor to stop polling.
+type chanSizeQueue struct {
+	ch <-chan util.TerminalSize
+}
+
+func (q *chanSizeQueue) Next() *remotecommand.TerminalSize {
+	sz, ok := <-q.ch
+	if !ok {
+		return nil
+	}
+	return &remotecommand.TerminalSize{Width: sz.Cols, Height: sz.Rows}
 }
 
 func stream(
@@ -85,22 +112,8 @@ func stream(
 	url *url.URL,
 	config *restclient.Config,
 	raw bool,
+	sizeQueue remotecommand.TerminalSizeQueue,
 ) error {
-	//var resizeQueue *tty.ResizeQueue
-	//if raw {
-	//	if cli.OutputStream().IsTerminal() {
-	//		resizeQueue = tty.NewResizeQueue(ctx, cli.OutputStream())
-	//		resizeQueue.Start()
-	//	}
-	//
-	//	cli.InputStream().SetRawTerminal()
-	//	cli.OutputStream().SetRawTerminal()
-	//	defer func() {
-	//		cli.InputStream().RestoreTerminal()
-	//		cli.OutputStream().RestoreTerminal()
-	//	}()
-	//}
-
 	fmt.Printf("Creating executors for url: %s...\n", url.String())
 
 	spdyExec, err := remotecommand.NewSPDYExecutor(config, "POST", url)
@@ -112,6 +125,7 @@ func stream(
 	if err != nil {
 		return fmt.Errorf("cannot create WebSocket executor: %w", err)
 	}
+
 	exec, err := remotecommand.NewFallbackExecutor(websocketExec, spdyExec, httpstream.IsUpgradeFailure)
 	if err != nil {
 		return fmt.Errorf("cannot create fallback executor: %w", err)
@@ -119,12 +133,12 @@ func stream(
 
 	fmt.Printf("Streaming to %s...\n", url.String())
 	return exec.StreamWithContext(ctx, remotecommand.StreamOptions{
-		Stdin:  streamz.Input,
-		Stdout: streamz.Output,
-		Stderr: streamz.Error,
-		Tty:    raw,
+		Stdin:             streamz.Input,
+		Stdout:            streamz.Output,
+		Stderr:            streamz.Error,
+		Tty:               raw,
+		TerminalSizeQueue: sizeQueue,
 	})
-
 }
 
 func waitForContainer(
@@ -179,43 +193,6 @@ func waitForContainer(
 	return nil, err
 }
 
-func dumpDebuggerLogs(
-	ctx context.Context,
-	client kubernetes.Interface,
-	ns string,
-	podName string,
-	containerName string,
-	out io.Writer,
-) error {
-	fmt.Printf("Dumping logs for %s/%s...\n", ns, podName)
-	req := client.CoreV1().Pods(ns).GetLogs(podName, &corev1.PodLogOptions{
-		Container: containerName,
-		Follow:    false,
-	})
-
-	fmt.Printf("Streaming logs...\n")
-	readCloser, err := req.Stream(ctx)
-	if err != nil {
-		return err
-	}
-	defer readCloser.Close()
-
-	fmt.Printf("Writing logs...\n")
-	r := bufio.NewReader(readCloser)
-	for {
-		bytes, err := r.ReadBytes('\n')
-		if _, err := out.Write(bytes); err != nil {
-			return err
-		}
-		if err == io.EOF {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-	}
-}
-
 func containerStatusByName(pod *corev1.Pod, containerName string) *corev1.ContainerStatus {
 	allContainerStatus := [][]corev1.ContainerStatus{
 		pod.Status.InitContainerStatuses,
@@ -241,56 +218,3 @@ func ephemeralContainerByName(pod *corev1.Pod, containerName string) *corev1.Eph
 	return nil
 }
 
-func Exec(ctx *gin.Context, ns string, podName string, debuggerName string, streamz util.Streamz, tty bool, message []byte) {
-	client, config, err := kubeconfig.GetKubClient()
-	if err != nil {
-		fmt.Errorf("error getting Kubernetes client: %v", err)
-	}
-
-	fmt.Printf("Waiting for debugger container...\n")
-	pod, err := waitForContainer(ctx, client, ns, podName, debuggerName, true)
-	if err != nil {
-		panic(err)
-	}
-
-	debuggerContainer := ephemeralContainerByName(pod, debuggerName)
-	if debuggerContainer == nil {
-		fmt.Errorf("cannot find debugger container %q in pod %q", debuggerName, podName)
-		panic(err)
-	}
-
-	fmt.Printf("Attaching to debugger container...\n")
-	fmt.Printf("If you don't see a command prompt, try pressing enter.\n")
-	req := client.CoreV1().RESTClient().
-		Post().
-		Resource("pods").
-		Name(podName).
-		Namespace(ns).
-		SubResource("exec").
-		VersionedParams(&corev1.PodExecOptions{
-			Container: debuggerName,
-			Command:   []string{string(message)},
-			Stdin:     true,
-			Stdout:    true,
-			Stderr:    true,
-			TTY:       true,
-		}, scheme.ParameterCodec)
-
-	streamingCtx, cancelStreamingCtx := context.WithCancel(ctx)
-	defer cancelStreamingCtx()
-
-	// if container dies, stop streaming
-	go func() {
-		_, _ = waitForContainer(ctx, client, ns, podName, debuggerName, false)
-		// Debugger container is not running anymore - streaming no longer needed.
-		cancelStreamingCtx()
-	}()
-
-	if err := stream(streamingCtx, streamz, req.URL(), config, tty); err != nil {
-		fmt.Printf("error streaming to/from debugger container: %v", err)
-	}
-
-	if err := dumpDebuggerLogs(ctx, client, ns, podName, debuggerName, ctx.Writer); err != nil {
-		fmt.Printf("error dumping debugger logs: %v", err)
-	}
-}

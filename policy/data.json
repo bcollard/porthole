@@ -1,0 +1,33 @@
+{
+  "policy": {
+    "roles": {
+      "viewer":   ["list_namespaces", "list_pods", "list_ec"],
+      "debugger": ["list_namespaces", "list_pods", "list_ec", "inject_ec", "attach_ec"],
+      "admin":    ["list_namespaces", "list_pods", "list_ec", "inject_ec", "attach_ec"]
+    },
+    "bindings": [
+      {"group": "porthole-admins",    "role": "admin",    "namespace_glob": "*"},
+      {"group": "porthole-debuggers", "role": "debugger", "namespace_glob": "*"},
+      {"group": "porthole-viewers",   "role": "viewer",   "namespace_glob": "*"},
+
+      {"group": "team-a", "role": "debugger", "namespace_glob": "team-a-*"},
+      {"group": "team-b", "role": "debugger", "namespace_glob": "team-b-*"},
+
+      {"group": "secops",
+       "role": "debugger",
+       "namespace_labels": {"tier": "production"}},
+
+      {"group": "tenant-acme",
+       "role": "debugger",
+       "namespace_glob": "tenant-*",
+       "namespace_labels": {"tenant": "acme"}},
+
+      {"group": "junior-devs",
+       "role": "debugger",
+       "namespace_glob": "dev-*",
+       "business_hours": true},
+
+      {"group": "local-dev", "role": "admin", "namespace_glob": "*"}
+    ]
+  }
+}

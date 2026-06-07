@@ -3,105 +3,115 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/bcollard/porthole/pkg/controllers"
-	"github.com/gin-gonic/gin"
-	"golang.org/x/sync/errgroup"
-	"k8s.io/klog/v2"
 	"log"
 	"net/http"
 	"os"
 	"time"
+
+	"github.com/bcollard/porthole/pkg/auth"
+	"github.com/bcollard/porthole/pkg/controllers"
+	"github.com/bcollard/porthole/pkg/web"
+	"github.com/gin-gonic/gin"
+	"k8s.io/klog/v2"
 )
 
-var (
-	g errgroup.Group
-)
+func router(jwtMW gin.HandlerFunc) http.Handler {
+	r := gin.Default()
+	r.Use(corsMiddleware())
 
-// Used by the discovery REST API
-// and the debug REST API
-func restRouter() http.Handler {
-	restRouter := gin.Default()
-	// get namespaces
-	restRouter.GET("/explore", controllers.GetNamespaces)
-	restRouter.GET("/explore/ns", controllers.GetNamespaces)
-	restRouter.GET("/explore/namespaces", controllers.GetNamespaces)
+	// ----- public (no auth) -----
+	r.StaticFS("/ui", web.FS())
+	r.GET("/", func(c *gin.Context) { c.Redirect(http.StatusFound, "/ui/") })
+	r.GET("/index.html", func(c *gin.Context) { c.FileFromFS("index.html", web.FS()) })
+	r.GET("/app.js", func(c *gin.Context) { c.FileFromFS("app.js", web.FS()) })
+	r.GET("/style.css", func(c *gin.Context) { c.FileFromFS("style.css", web.FS()) })
+	r.GET("/api/config", controllers.GetConfig)
+	r.GET("/echo", controllers.EchoWs)
 
-	// get pods
-	restRouter.GET("/explore/:ns", controllers.GetPods)
-	restRouter.GET("/explore/ns/:ns", controllers.GetPods)
-	restRouter.GET("/explore/ns/:ns/pods", controllers.GetPods)
-	restRouter.GET("/explore/namespace/:ns", controllers.GetPods)
-	restRouter.GET("/explore/namespace/:ns/pods", controllers.GetPods)
-	restRouter.GET("/explore/namespaces/:ns", controllers.GetPods)
-	restRouter.GET("/explore/namespaces/:ns/pods", controllers.GetPods)
+	// ----- protected (JWT required, OPA-authorized inside the handlers) -----
+	api := r.Group("/")
+	api.Use(jwtMW)
 
-	// debug endpoints
-	restRouter.POST("/debug/inject", controllers.Inject)
-	restRouter.POST("/debug/exec", controllers.Exec)
-	restRouter.GET("/debug/list", controllers.List)
+	api.GET("/explore", controllers.GetNamespaces)
+	api.GET("/explore/ns", controllers.GetNamespaces)
+	api.GET("/explore/namespaces", controllers.GetNamespaces)
 
-	return restRouter
+	api.GET("/explore/:ns", controllers.GetPods)
+	api.GET("/explore/ns/:ns", controllers.GetPods)
+	api.GET("/explore/ns/:ns/pods", controllers.GetPods)
+	api.GET("/explore/namespace/:ns", controllers.GetPods)
+	api.GET("/explore/namespace/:ns/pods", controllers.GetPods)
+	api.GET("/explore/namespaces/:ns", controllers.GetPods)
+	api.GET("/explore/namespaces/:ns/pods", controllers.GetPods)
+
+	api.GET("/explore/ns/:ns/pods/:pod/ec", controllers.ListECByPath)
+
+	api.POST("/debug/inject", controllers.Inject)
+	api.GET("/debug/list", controllers.List)
+
+	api.GET("/term/:ns/:pod/:ctr", controllers.AttachWs)
+
+	return r
 }
 
-// Used by the attach websocket
-// and the home web page
-func wsRouter() http.Handler {
-	wsRouter := gin.New()
-	wsRouter.GET("/echo", controllers.EchoWs)
-	wsRouter.GET("/term/:ns/:pod/:ctr", controllers.AttachWs)
-	wsRouter.GET("/", controllers.HomeWs)
-
-	return wsRouter
+func corsMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Header("Access-Control-Allow-Origin", "*")
+		c.Header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-ID-Token")
+		if c.Request.Method == http.MethodOptions {
+			c.AbortWithStatus(http.StatusNoContent)
+			return
+		}
+		c.Next()
+	}
 }
 
 func main() {
-
 	setLogging()
 
-	// get restPort from env
-	restPort := os.Getenv("PORT")
-	if restPort == "" {
-		restPort = "8081"
-	}
-
-	// get wsPort from env
-	wsPort := os.Getenv("WS_PORT")
-	if wsPort == "" {
-		wsPort = "8082"
-	}
-
-	restServer := &http.Server{
-		Addr:         "0.0.0.0:" + restPort,
-		Handler:      restRouter(),
-		ReadTimeout:  5 * time.Second,
-		WriteTimeout: 10 * time.Second,
-	}
-
-	wsServer := &http.Server{
-		Addr:    "0.0.0.0:" + wsPort,
-		Handler: wsRouter(),
-	}
-
-	g.Go(func() error {
-		fmt.Printf("REST server listening on port %s\n", restPort)
-		return restServer.ListenAndServe()
+	jwtMW, err := auth.NewJWTMiddleware(auth.JWTConfig{
+		JWKSURL:  os.Getenv("JWKS_URL"),
+		Issuer:   os.Getenv("OIDC_ISSUER"),
+		Audience: os.Getenv("OIDC_AUDIENCE"),
 	})
+	if err != nil {
+		log.Fatalf("auth init: %v", err)
+	}
 
-	g.Go(func() error {
-		fmt.Printf("WS server listening on port %s\n", wsPort)
-		return wsServer.ListenAndServe()
-	})
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8081"
+	}
 
-	if err := g.Wait(); err != nil {
+	srv := &http.Server{
+		Addr:              "0.0.0.0:" + port,
+		Handler:           router(jwtMW),
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+
+	logStartupBanner(port)
+	if err := srv.ListenAndServe(); err != nil {
 		log.Fatal(err)
 	}
-
 }
 
-// enable the k8s logging system
-func setLogging() {
-	klog.InitFlags(nil) // initializing the flags
-	defer klog.Flush()  // flushes all pending log I/O
+func logStartupBanner(port string) {
+	authMode := "JWT required"
+	if os.Getenv("AUTH_DISABLED") == "true" {
+		authMode = "AUTH_DISABLED (local-dev principal)"
+	}
+	opaMode := "OPA disabled (allow all)"
+	if u := os.Getenv("OPA_URL"); u != "" {
+		opaMode = "OPA @ " + u
+	}
+	fmt.Printf("Porthole listening on http://0.0.0.0:%s/ui/\n", port)
+	fmt.Printf("  authN: %s\n", authMode)
+	fmt.Printf("  authZ: %s\n", opaMode)
+}
 
-	flag.Parse() // parses the command-line flags
+func setLogging() {
+	klog.InitFlags(nil)
+	defer klog.Flush()
+	flag.Parse()
 }

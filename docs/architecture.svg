@@ -1,0 +1,186 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 720" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, system-ui, sans-serif">
+  <defs>
+    <style>
+      .bg          { fill: #0b0d12; }
+      .grid        { stroke: #1a1f29; stroke-width: 1; }
+      .title       { fill: #e6e8ec; font-size: 22px; font-weight: 700; letter-spacing: 0.04em; }
+      .subtitle    { fill: #8b94a3; font-size: 13px; }
+      .group-lbl   { fill: #5d6573; font-size: 11px; letter-spacing: 0.15em; text-transform: uppercase; }
+      .group-box   { fill: none; stroke: #232a36; stroke-width: 1; stroke-dasharray: 4 4; }
+      .node        { fill: #12151c; stroke-width: 1.5; }
+      .node-name   { fill: #e6e8ec; font-size: 14px; font-weight: 600; }
+      .node-desc   { fill: #8b94a3; font-size: 11px; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+      .edge        { stroke-width: 1.5; fill: none; }
+      .edge-lbl    { fill: #8b94a3; font-size: 11px; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+      .edge-lbl-bg { fill: #0b0d12; }
+      .legend-lbl  { fill: #8b94a3; font-size: 12px; }
+    </style>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#8b94a3"/>
+    </marker>
+    <marker id="arr-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#6ea8fe"/>
+    </marker>
+    <marker id="arr-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#4ade80"/>
+    </marker>
+    <marker id="arr-magenta" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#c084fc"/>
+    </marker>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000" flood-opacity="0.5"/>
+    </filter>
+  </defs>
+
+  <rect class="bg" width="100%" height="100%"/>
+
+  <!-- title -->
+  <text class="title" x="40" y="48">Porthole — architecture</text>
+  <text class="subtitle" x="40" y="72">Browser-driven Kubernetes debugging via ephemeral containers, fronted by Envoy Gateway + OIDC</text>
+
+  <!-- ===== zones ===== -->
+  <text class="group-lbl" x="40" y="112">Client</text>
+  <rect class="group-box" x="40" y="120" width="200" height="200" rx="10"/>
+
+  <text class="group-lbl" x="270" y="112">Identity</text>
+  <rect class="group-box" x="270" y="120" width="220" height="200" rx="10"/>
+
+  <text class="group-lbl" x="520" y="112">Edge</text>
+  <rect class="group-box" x="520" y="120" width="220" height="200" rx="10"/>
+
+  <text class="group-lbl" x="40" y="370">Cluster</text>
+  <rect class="group-box" x="40" y="378" width="1100" height="296" rx="10"/>
+
+  <!-- ===== Browser ===== -->
+  <g filter="url(#shadow)">
+    <rect class="node" x="60" y="160" width="160" height="100" rx="8" stroke="#fbbf24"/>
+    <text class="node-name" x="140" y="190" text-anchor="middle">Browser</text>
+    <text class="node-desc" x="140" y="212" text-anchor="middle">xterm.js</text>
+    <text class="node-desc" x="140" y="228" text-anchor="middle">SPA (vanilla ES)</text>
+    <text class="node-desc" x="140" y="244" text-anchor="middle">WS + REST</text>
+  </g>
+
+  <!-- ===== Keycloak ===== -->
+  <g filter="url(#shadow)">
+    <rect class="node" x="290" y="160" width="180" height="100" rx="8" stroke="#c084fc"/>
+    <text class="node-name" x="380" y="190" text-anchor="middle">Keycloak</text>
+    <text class="node-desc" x="380" y="212" text-anchor="middle">keycloak.kong</text>
+    <text class="node-desc" x="380" y="228" text-anchor="middle">.runlocal.dev</text>
+    <text class="node-desc" x="380" y="244" text-anchor="middle">realm: porthole</text>
+  </g>
+
+  <!-- ===== Envoy Gateway ===== -->
+  <g filter="url(#shadow)">
+    <rect class="node" x="540" y="160" width="180" height="140" rx="8" stroke="#4ade80"/>
+    <text class="node-name" x="630" y="190" text-anchor="middle">Envoy Gateway</text>
+    <text class="node-desc" x="630" y="212" text-anchor="middle">Gateway API</text>
+    <text class="node-desc" x="630" y="228" text-anchor="middle">HTTPRoute</text>
+    <text class="node-desc" x="630" y="244" text-anchor="middle">SecurityPolicy:</text>
+    <text class="node-desc" x="630" y="260" text-anchor="middle">OIDC</text>
+    <text class="node-desc" x="630" y="280" text-anchor="middle" fill="#4ade80">enforces authN</text>
+  </g>
+
+  <!-- ===== Porthole ===== -->
+  <g filter="url(#shadow)">
+    <rect class="node" x="80" y="420" width="220" height="220" rx="10" stroke="#6ea8fe"/>
+    <text class="node-name" x="190" y="450" text-anchor="middle">Porthole</text>
+    <text class="node-desc" x="190" y="470" text-anchor="middle">Go binary</text>
+    <line x1="100" y1="484" x2="280" y2="484" stroke="#232a36"/>
+    <text class="node-desc" x="105" y="506">single port  :8081</text>
+    <text class="node-desc" x="105" y="528" fill="#5d6573">/ui /explore /debug</text>
+    <text class="node-desc" x="105" y="558">/term/:ns/:pod/:ctr</text>
+    <text class="node-desc" x="105" y="580" fill="#5d6573">WS upgrade in-place</text>
+    <text class="node-desc" x="105" y="610" fill="#6ea8fe">+ authZ (OPA, planned)</text>
+  </g>
+
+  <!-- ===== kube API server ===== -->
+  <g filter="url(#shadow)">
+    <rect class="node" x="380" y="430" width="200" height="120" rx="8" stroke="#8b94a3"/>
+    <text class="node-name" x="480" y="460" text-anchor="middle">kube-apiserver</text>
+    <text class="node-desc" x="480" y="482" text-anchor="middle">Pods / EphemeralContainers</text>
+    <text class="node-desc" x="480" y="500" text-anchor="middle">subresources:</text>
+    <text class="node-desc" x="480" y="516" text-anchor="middle">attach, exec</text>
+    <text class="node-desc" x="480" y="536" text-anchor="middle" fill="#5d6573">SPDY ↔ WS fallback</text>
+  </g>
+
+  <!-- ===== Kubelet ===== -->
+  <g filter="url(#shadow)">
+    <rect class="node" x="660" y="430" width="160" height="100" rx="8" stroke="#8b94a3"/>
+    <text class="node-name" x="740" y="460" text-anchor="middle">Kubelet</text>
+    <text class="node-desc" x="740" y="482" text-anchor="middle">CRI stream</text>
+    <text class="node-desc" x="740" y="500" text-anchor="middle">PTY proxy</text>
+    <text class="node-desc" x="740" y="518" text-anchor="middle" fill="#5d6573">resize · stdin · stdout</text>
+  </g>
+
+  <!-- ===== Target pod ===== -->
+  <g filter="url(#shadow)">
+    <rect class="node" x="880" y="420" width="240" height="220" rx="10" stroke="#475569"/>
+    <text class="node-name" x="1000" y="450" text-anchor="middle">Target Pod</text>
+    <text class="node-desc" x="1000" y="470" text-anchor="middle" fill="#5d6573">workload namespace</text>
+    <rect x="900" y="490" width="200" height="60" rx="6" fill="#1a1f29" stroke="#475569"/>
+    <text class="node-desc" x="1000" y="512" text-anchor="middle">app container</text>
+    <text class="node-desc" x="1000" y="530" text-anchor="middle" fill="#5d6573">unchanged</text>
+    <rect x="900" y="560" width="200" height="60" rx="6" fill="#0f1722" stroke="#4ade80"/>
+    <text class="node-desc" x="1000" y="582" text-anchor="middle" fill="#4ade80">+ ephemeral container</text>
+    <text class="node-desc" x="1000" y="600" text-anchor="middle">busybox · netshoot · …</text>
+  </g>
+
+  <!-- ===== edges ===== -->
+
+  <!-- Browser → Envoy -->
+  <path class="edge" d="M 220 200 L 540 200" stroke="#fbbf24" marker-end="url(#arr)"/>
+  <path class="edge" d="M 540 222 L 220 222" stroke="#fbbf24" marker-end="url(#arr)" stroke-dasharray="6 4"/>
+  <rect class="edge-lbl-bg" x="320" y="186" width="150" height="14"/>
+  <text class="edge-lbl" x="395" y="197" text-anchor="middle">HTTPS · WSS · OIDC</text>
+  <rect class="edge-lbl-bg" x="320" y="226" width="150" height="14"/>
+  <text class="edge-lbl" x="395" y="237" text-anchor="middle" fill="#5d6573">login redirect</text>
+
+  <!-- Envoy ↔ Keycloak -->
+  <path class="edge" d="M 540 240 L 470 240" stroke="#c084fc" marker-end="url(#arr-magenta)"/>
+  <path class="edge" d="M 470 260 L 540 260" stroke="#c084fc" marker-end="url(#arr-magenta)" stroke-dasharray="4 3"/>
+  <rect class="edge-lbl-bg" x="478" y="244" width="60" height="12"/>
+  <text class="edge-lbl" x="508" y="254" text-anchor="middle" fill="#c084fc">OIDC</text>
+
+  <!-- Envoy → Porthole -->
+  <path class="edge" d="M 630 300 L 630 360 L 190 360 L 190 420" stroke="#4ade80" marker-end="url(#arr-green)" stroke-width="2"/>
+  <rect class="edge-lbl-bg" x="350" y="352" width="270" height="14"/>
+  <text class="edge-lbl" x="485" y="363" text-anchor="middle" fill="#4ade80">HTTP + Authorization: Bearer &lt;id_token&gt;</text>
+
+  <!-- Porthole → API server (REST control) -->
+  <path class="edge" d="M 300 470 L 380 470" stroke="#6ea8fe" marker-end="url(#arr-accent)"/>
+  <rect class="edge-lbl-bg" x="304" y="454" width="74" height="14"/>
+  <text class="edge-lbl" x="341" y="465" text-anchor="middle" fill="#6ea8fe">REST</text>
+
+  <!-- Porthole ↔ API server (attach stream, dashed) -->
+  <path class="edge" d="M 300 520 L 380 520" stroke="#6ea8fe" stroke-dasharray="6 4" marker-end="url(#arr-accent)"/>
+  <path class="edge" d="M 380 540 L 300 540" stroke="#6ea8fe" stroke-dasharray="6 4" marker-end="url(#arr-accent)"/>
+  <rect class="edge-lbl-bg" x="304" y="504" width="74" height="14"/>
+  <text class="edge-lbl" x="341" y="515" text-anchor="middle" fill="#6ea8fe">attach</text>
+
+  <!-- API ↔ Kubelet -->
+  <path class="edge" d="M 580 480 L 660 480" stroke="#8b94a3" stroke-dasharray="6 4" marker-end="url(#arr)"/>
+  <path class="edge" d="M 660 500 L 580 500" stroke="#8b94a3" stroke-dasharray="6 4" marker-end="url(#arr)"/>
+
+  <!-- Kubelet ↔ pod -->
+  <path class="edge" d="M 820 480 L 880 480" stroke="#8b94a3" stroke-dasharray="6 4" marker-end="url(#arr)"/>
+  <path class="edge" d="M 880 500 L 820 500" stroke="#8b94a3" stroke-dasharray="6 4" marker-end="url(#arr)"/>
+
+  <!-- ===== legend ===== -->
+  <g transform="translate(40, 692)">
+    <line x1="0" y1="0" x2="30" y2="0" stroke="#8b94a3" stroke-width="1.5" marker-end="url(#arr)"/>
+    <text class="legend-lbl" x="38" y="4">REST (short-lived)</text>
+
+    <line x1="180" y1="0" x2="210" y2="0" stroke="#8b94a3" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#arr)"/>
+    <text class="legend-lbl" x="218" y="4">long-lived stream (WS / SPDY)</text>
+
+    <line x1="430" y1="0" x2="460" y2="0" stroke="#c084fc" stroke-width="1.5" marker-end="url(#arr-magenta)"/>
+    <text class="legend-lbl" x="468" y="4" fill="#c084fc">OIDC handshake</text>
+
+    <line x1="600" y1="0" x2="630" y2="0" stroke="#4ade80" stroke-width="2" marker-end="url(#arr-green)"/>
+    <text class="legend-lbl" x="638" y="4" fill="#4ade80">authenticated request</text>
+
+    <line x1="810" y1="0" x2="840" y2="0" stroke="#6ea8fe" stroke-width="1.5" marker-end="url(#arr-accent)"/>
+    <text class="legend-lbl" x="848" y="4" fill="#6ea8fe">Porthole → kube API</text>
+  </g>
+</svg>

@@ -2,16 +2,21 @@ package controllers
 
 import (
 	"fmt"
+	"log"
+	"net/http"
+
+	"github.com/bcollard/porthole/pkg/audit"
+	"github.com/bcollard/porthole/pkg/auth"
 	"github.com/bcollard/porthole/pkg/ephemeral"
 	"github.com/bcollard/porthole/pkg/util"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
-	"log"
-	"os"
 )
 
 var (
-	upgrader = websocket.Upgrader{} // use default option
+	upgrader = websocket.Upgrader{
+		CheckOrigin: func(r *http.Request) bool { return true },
+	}
 )
 
 func EchoWs(ctx *gin.Context) {
@@ -30,72 +35,42 @@ func EchoWs(ctx *gin.Context) {
 			break
 		}
 		log.Printf("recv: %s", message)
-		err = c.WriteMessage(mt, message)
-
-		if err != nil {
+		if err := c.WriteMessage(mt, message); err != nil {
 			log.Println("write err: ", err)
 			break
 		}
 	}
 }
 
-func AttachWs(context *gin.Context) {
-	namespace := context.Param("ns")
-	pod := context.Param("pod")
-	debugContainer := context.Param("ctr")
+func AttachWs(c *gin.Context) {
+	namespace := c.Param("ns")
+	pod := c.Param("pod")
+	debugContainer := c.Param("ctr")
 
-	w, r := context.Writer, context.Request
-	c, err := upgrader.Upgrade(w, r, nil)
+	// Authorize BEFORE upgrading — a 403 lets the browser surface the
+	// reason via ws.onerror; after upgrade we'd lose that affordance.
+	if d := auth.Authorize(c, auth.ActionAttachEC, namespace, pod); !d.Allow {
+		audit.LogAttachDeny(c, namespace, pod, debugContainer, d.Reason)
+		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden", "reason": d.Reason})
+		return
+	}
+
+	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		log.Println("upgrade:", err)
 		return
 	}
-	defer c.Close()
+	defer conn.Close()
+
+	session := util.NewWsSession(conn)
+	go session.Start(c.Request.Context())
 
 	streamz := util.Streamz{
-		Input:  context.Request.Body,
-		Output: w,
-		Error:  w,
+		Input:  session.Stdin(),
+		Output: session.Stdout(),
+		Error:  session.Stderr(),
 	}
 
 	fmt.Printf("Attaching to %s/%s/%s...\n", namespace, pod, debugContainer)
-	// ideally we would want to use a bidirectional websocket from here.
-	ephemeral.Attach(context, namespace, pod, debugContainer, streamz, true)
-
-	// for now, we will loop on incoming messages and send them to the container as exec commands :-(
-	for {
-		mt, message, err := c.ReadMessage()
-		if err != nil {
-			log.Println("read:", err)
-			break
-		}
-		log.Printf("recv: %s", message)
-		err = c.WriteMessage(mt, message)
-
-		ephemeral.Exec(context, namespace, pod, debugContainer, streamz, true, message)
-		// doesn't work as expected
-
-		if err != nil {
-			log.Println("write err: ", err)
-			break
-		}
-	}
-
-}
-
-func HomeWs(c *gin.Context) {
-	address, port := getWsAddressAndPort()
-	homeTemplate.Execute(c.Writer, "ws://"+address+":"+port)
-}
-
-func getWsAddressAndPort() (string, string) {
-	address := os.Getenv("WS_ADDRESS")
-	if address == "" {
-		panic("WS_ADDRESS env variable is not set")
-	}
-	port := os.Getenv("WS_PORT")
-	if port == "" {
-		port = "8082"
-	}
-	return address, port
+	ephemeral.Attach(c, namespace, pod, debugContainer, streamz, session.Resize(), true)
 }

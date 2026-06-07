@@ -1,7 +1,6 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  creationTimestamp: null
   labels:
     app: porthole
   name: porthole
@@ -11,24 +10,55 @@ spec:
   selector:
     matchLabels:
       app: porthole
-  strategy: {}
   template:
     metadata:
-      creationTimestamp: null
       labels:
         app: porthole
     spec:
       serviceAccountName: porthole
       containers:
-      - image: ko://github.com/bcollard/porthole
-        name: main
-        resources: {}
-        args:
-          - "-v"
-          - "6"
-#          - "--logtostderr"
-#          - "true"
-        env:
-          - name: WS_ADDRESS
-            value: "172.18.2.4"
-status: {}
+        # --- porthole main container -----------------------------------
+        - name: main
+          image: ko://github.com/bcollard/porthole
+          args: ["-v", "6"]
+          ports:
+            - name: http
+              containerPort: 8081
+          env:
+            # authN: Keycloak JWKS / issuer / audience.
+            - name: JWKS_URL
+              value: "https://keycloak.kong.runlocal.dev/realms/porthole/protocol/openid-connect/certs"
+            - name: OIDC_ISSUER
+              value: "https://keycloak.kong.runlocal.dev/realms/porthole"
+            - name: OIDC_AUDIENCE
+              value: ""              # leave empty unless you map an audience
+            # authZ: talk to the local OPA sidecar.
+            - name: OPA_URL
+              value: "http://localhost:8181/v1/data/porthole/authz/decision"
+            # set AUTH_DISABLED=true to bypass auth for a local kubectl port-forward test
+            # - name: AUTH_DISABLED
+            #   value: "true"
+
+        # --- OPA sidecar -----------------------------------------------
+        - name: opa
+          image: openpolicyagent/opa:0.69.0-static
+          args:
+            - "run"
+            - "--server"
+            - "--addr=0.0.0.0:8181"
+            - "--log-level=info"
+            - "/policies"
+          ports:
+            - name: opa
+              containerPort: 8181
+          readinessProbe:
+            httpGet: { path: /health, port: 8181 }
+          volumeMounts:
+            - name: policy
+              mountPath: /policies
+              readOnly: true
+
+      volumes:
+        - name: policy
+          configMap:
+            name: porthole-opa-policy
