@@ -1,0 +1,39 @@
+# Envoy Gateway OIDC SecurityPolicy for porthole.
+#
+# Applied separately from the porthole helm chart — the chart is
+# gateway-implementation neutral and stays free of EG-specific CRDs.
+#
+# Prerequisites:
+#   1. Envoy Gateway installed (helm install eg oci://docker.io/envoyproxy/gateway-helm).
+#   2. A Gateway named "eg" in the default namespace (kept in sync with
+#      docs/examples/envoy-gateway/values.yaml).
+#   3. An OIDC client provisioned (scripts/keycloak-bootstrap.sh).
+#   4. The OIDC client-secret stored as a kube Secret in this namespace
+#      (kubectl create secret generic porthole-oidc \
+#         --from-literal=client-secret=<paste>).
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: SecurityPolicy
+metadata:
+  name: porthole
+  namespace: default
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: porthole
+  oidc:
+    provider:
+      issuer: "https://keycloak.example.com/realms/porthole"
+    clientID: "porthole"
+    clientSecret:
+      name: porthole-oidc
+    redirectURL: "https://porthole.example.com/oauth2/callback"
+    logoutPath: "/logout"
+    scopes:
+      - openid
+      - profile
+      - email
+    # Forward the access_token as Authorization: Bearer …, which the
+    # porthole JWT middleware then validates.
+    forwardAccessToken: true

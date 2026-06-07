@@ -1,29 +1,27 @@
-# Curated overrides for the porthole helm chart used in the
-# envoy-gateway example. Pair with `helm install ... --values values.yaml`.
+# Helm values for porthole when fronted by Envoy Gateway.
+#
+# Pair with envoy-gateway-securitypolicy.yaml (applied separately —
+# it's an Envoy-Gateway-specific CR and shouldn't ship in this chart).
+#
+# Replace the hostnames and the parentRefs to match your Gateway.
 
 auth:
   disabled: false
-  # jwksURL / issuer come from --set on the install command line.
+  # Real values come from --set on the install command line.
+  # jwksURL: "https://kc.example.com/realms/porthole/protocol/openid-connect/certs"
+  # issuer:  "https://kc.example.com/realms/porthole"
 
-wsAllowedOrigins: "https://porthole.example.com,http://porthole.example.com:8080"
+wsAllowedOrigins: "https://porthole.example.com"
 
 opa:
   enabled: true
 
 ecSweepTTL: "30m"
 
-gateway:
+gatewayAPI:
   enabled: true
-  className: eg
-  hostname: porthole.example.com
-  # Leave tlsSecretName empty for plain HTTP (kind/dev).
-  tlsSecretName: ""
-  oidc:
-    enabled: true
-    # issuer / clientID / clientSecret come from --set or your own
-    # values file. Avoid committing real secrets here.
-    forwardAccessToken: true
-    scopes:
-      - openid
-      - profile
-      - email
+  hostnames:
+    - porthole.example.com
+  parentRefs:
+    - name: eg              # name of the Gateway you already created
+      namespace: default    # adjust if it lives elsewhere

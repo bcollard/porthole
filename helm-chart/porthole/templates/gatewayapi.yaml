@@ -1,4 +1,5 @@
-{{- if .Values.gateway.enabled }}
+{{- if .Values.gatewayAPI.enabled }}
+{{- if .Values.gatewayAPI.gateway.create }}
 apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
 metadata:
@@ -7,30 +8,23 @@ metadata:
   labels:
     {{- include "porthole.labels" . | nindent 4 }}
 spec:
-  gatewayClassName: {{ .Values.gateway.className }}
+  gatewayClassName: {{ required "gatewayAPI.gateway.className is required when gateway.create=true" .Values.gatewayAPI.gateway.className }}
   listeners:
-    - name: http
-      protocol: HTTP
-      port: 80
-      hostname: {{ .Values.gateway.hostname | quote }}
-      allowedRoutes:
-        namespaces:
-          from: Same
-    {{- if .Values.gateway.tlsSecretName }}
-    - name: https
-      protocol: HTTPS
-      port: 443
-      hostname: {{ .Values.gateway.hostname | quote }}
+    - name: {{ .Values.gatewayAPI.gateway.listenerName }}
+      protocol: {{ .Values.gatewayAPI.gateway.protocol }}
+      port: {{ .Values.gatewayAPI.gateway.port }}
+      {{- if .Values.gatewayAPI.gateway.tlsSecretName }}
       tls:
         mode: Terminate
         certificateRefs:
           - kind: Secret
-            name: {{ .Values.gateway.tlsSecretName }}
+            name: {{ .Values.gatewayAPI.gateway.tlsSecretName }}
+      {{- end }}
       allowedRoutes:
         namespaces:
           from: Same
-    {{- end }}
 ---
+{{- end }}
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -40,9 +34,15 @@ metadata:
     {{- include "porthole.labels" . | nindent 4 }}
 spec:
   parentRefs:
+    {{- if .Values.gatewayAPI.gateway.create }}
     - name: {{ include "porthole.fullname" . }}
+    {{- else }}
+    {{- toYaml .Values.gatewayAPI.parentRefs | nindent 4 }}
+    {{- end }}
   hostnames:
-    - {{ .Values.gateway.hostname | quote }}
+    {{- range .Values.gatewayAPI.hostnames }}
+    - {{ . | quote }}
+    {{- end }}
   rules:
     - matches:
         - path:

@@ -45,12 +45,3 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- define "porthole.opaConfigMapName" -}}
 {{- printf "%s-opa-policy" (include "porthole.fullname" .) -}}
 {{- end -}}
-
-{{/* OIDC secret name (chart-managed or user-supplied). */}}
-{{- define "porthole.oidcSecretName" -}}
-{{- if .Values.gateway.oidc.existingSecretName -}}
-{{- .Values.gateway.oidc.existingSecretName -}}
-{{- else -}}
-{{- printf "%s-oidc" (include "porthole.fullname" .) -}}
-{{- end -}}
-{{- end -}}

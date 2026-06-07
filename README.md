@@ -33,47 +33,45 @@ admin. Drive the UI immediately: pick a namespace, pick a pod, click
 **+ Debugger**, you'll be attached as soon as the EC is running. Click
 **Clean up all** to terminate every porthole-injected EC in that pod.
 
-### Option B — Envoy Gateway + OIDC
+### Option B — fronted by an OIDC-aware gateway
 
-Full path: a real cluster with Envoy Gateway in front, OIDC auth via
-Keycloak (or any OIDC IdP), OPA policy.
+For anything beyond a kubectl-port-forward demo you need an OIDC layer
+in front: the browser has no way to attach a JWT itself, so something
+along the request path must terminate the OIDC handshake and inject
+`Authorization: Bearer <id_token>` for porthole to validate.
 
-```sh
-# 1. cluster + Envoy Gateway
-kind create cluster --name porthole-demo
-helm upgrade --install eg \
-  oci://docker.io/envoyproxy/gateway-helm \
-  --version v1.6.0 \
-  -n envoy-gateway-system --create-namespace
+The porthole chart is **gateway-implementation neutral** — it renders
+generic exposure resources (`Ingress`, Gateway API `HTTPRoute`,
+LoadBalancer `Service`) and lets you wire the OIDC layer yourself. Two
+worked recipes in [`docs/examples/`](./docs/examples/):
 
-# 2. Keycloak (skip if you already have an IdP).
-#    Easiest: run Keycloak in dev mode inside the same cluster.
-kubectl create ns keycloak
-kubectl -n keycloak create deployment keycloak \
-  --image=quay.io/keycloak/keycloak:26.0 -- start-dev
-kubectl -n keycloak set env deployment/keycloak \
-  KEYCLOAK_ADMIN=admin KEYCLOAK_ADMIN_PASSWORD=admin
-kubectl -n keycloak expose deployment keycloak --port=8080 --target-port=8080
-kubectl -n keycloak port-forward svc/keycloak 8080:8080 &
+| Recipe | OIDC layer | Data plane |
+|---|---|---|
+| [`envoy-gateway/`](./docs/examples/envoy-gateway/) | Envoy Gateway `SecurityPolicy.oidc` | Envoy Gateway |
+| [`oauth2-proxy/`](./docs/examples/oauth2-proxy/) | oauth2-proxy via nginx `auth_request` | ingress-nginx |
 
-# 3. Bootstrap realm/client/user against Keycloak's admin API.
-KEYCLOAK_URL=http://localhost:8080 ./scripts/keycloak-bootstrap.sh
-# ^ prints the client_secret + ready-to-paste helm flags
+Both ship with a `values.yaml` you point `helm install` at, plus any
+vendor-specific CRD (e.g. the EG `SecurityPolicy`) applied separately.
 
-# 4. Install Porthole with the printed values.
-helm install porthole ./helm-chart/porthole \
-  --namespace porthole --create-namespace \
-  --values docs/examples/envoy-gateway/values.yaml \
-  --set auth.jwksURL=http://localhost:8080/realms/porthole/protocol/openid-connect/certs \
-  --set auth.issuer=http://localhost:8080/realms/porthole \
-  --set gateway.oidc.issuer=http://localhost:8080/realms/porthole \
-  --set gateway.oidc.clientID=porthole \
-  --set gateway.oidc.clientSecret=<paste-from-step-3>
-```
+### Other OSS gateways with OIDC
 
-See [`docs/examples/envoy-gateway/`](./docs/examples/envoy-gateway/) for
-the full walkthrough including `kind` workarounds for LoadBalancer
-addresses and TLS.
+The two recipes above aren't the only options. Other community gateways
+that handle OIDC in their OSS releases:
+
+- **[Pomerium](https://www.pomerium.com/)** — identity-aware proxy with
+  native OIDC, OPA-compatible policy. Standalone (not a generic
+  ingress).
+- **[Traefik](https://traefik.io/)** + community
+  [`traefik-forward-auth`](https://github.com/thomseddon/traefik-forward-auth)
+  middleware.
+- **[Caddy](https://caddyserver.com/)** + the third-party
+  [`caddy-security`](https://github.com/greenpau/caddy-security) module.
+- **[Authelia](https://www.authelia.com/)** or
+  **[Authentik](https://goauthentik.io/)** as the OIDC layer in front of
+  any auth_request-capable ingress (nginx, Traefik, Caddy).
+
+The chart's `ingress.annotations` field is the join point with most of
+those.
 
 ### Run from source
 
@@ -289,8 +287,9 @@ attach lands here as `outcome:"denied"` with the OPA reason.
 ├── helm-chart/porthole/    # canonical install path (chart)
 ├── docs/
 │   ├── examples/           # ready-to-run example deployments
-│   │   ├── porthole/       # smallest install, no gateway
-│   │   └── envoy-gateway/  # full path with OIDC SecurityPolicy
+│   │   ├── porthole/       # smallest install, no gateway, no auth
+│   │   ├── envoy-gateway/  # Envoy Gateway + OIDC SecurityPolicy
+│   │   └── oauth2-proxy/   # ingress-nginx + oauth2-proxy auth_request
 │   └── *.svg               # architecture diagrams
 ├── deploy/                 # legacy ko-based manifests (superseded by the chart)
 ├── scripts/

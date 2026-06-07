@@ -113,29 +113,57 @@ opa:
 # porthole-injected EC older than this TTL.
 ecSweepTTL: ""
 
-# Optional Gateway API resources (Gateway / HTTPRoute / SecurityPolicy
-# + the OIDC client-secret). Disabled by default — see
-# docs/examples/envoy-gateway for the full flow.
-gateway:
+# --- exposing the service -----------------------------------------
+#
+# Pick the option that matches your cluster. Production deployments
+# need an OIDC-aware front (the browser has no way to attach a JWT
+# itself). See docs/examples/ for two concrete recipes:
+#   - envoy-gateway/  — Envoy Gateway SecurityPolicy
+#   - oauth2-proxy/   — ingress-nginx + oauth2-proxy auth_request
+#
+# Without an OIDC front you must set auth.disabled=true and accept
+# that everyone hitting the listener becomes the `local-dev`
+# principal. Fine for kubectl port-forward; never for production.
+
+# Standard k8s Ingress. Pair with an OIDC layer (oauth2-proxy via
+# auth_request, or your ingress controller's auth annotations).
+ingress:
   enabled: false
-  className: eg
-  hostname: porthole.example.com
-  # Pre-existing TLS secret in the gateway namespace.
-  tlsSecretName: ""
-  # OIDC SecurityPolicy (Envoy Gateway). Requires gateway.enabled.
-  oidc:
-    enabled: false
-    issuer: ""
-    clientID: ""
-    # Either set clientSecret (chart creates a Secret) or
-    # existingSecretName (chart references it as-is).
-    clientSecret: ""
-    existingSecretName: ""
-    scopes:
-      - openid
-      - profile
-      - email
-    forwardAccessToken: true
+  className: ""
+  annotations: {}
+  hosts:
+    - host: porthole.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  # tls:
+  #   - secretName: porthole-tls
+  #     hosts: [porthole.example.com]
+
+# Gateway API (gateway.networking.k8s.io). Vendor-neutral — works
+# with Envoy Gateway, Istio, NGINX Gateway Fabric, Cilium, etc.
+# The chart renders an HTTPRoute by default; set gateway.create=true
+# if you also want a dedicated Gateway in the chart's namespace
+# (most deployments share a platform-level Gateway elsewhere).
+gatewayAPI:
+  enabled: false
+  hostnames:
+    - porthole.example.com
+  # parentRefs of the HTTPRoute — point at the Gateway you want to
+  # attach to. Namespace defaults to the chart's namespace.
+  parentRefs:
+    - name: my-gateway
+      # namespace: gateway-system
+      # sectionName: http
+  gateway:
+    create: false
+    className: ""
+    listenerName: http
+    port: 80
+    protocol: HTTP
+    # When set, the listener uses HTTPS terminating at this secret.
+    tlsSecretName: ""
 
 resources: {}
 nodeSelector: {}

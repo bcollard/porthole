@@ -1,0 +1,47 @@
+# Helm values for porthole when fronted by ingress-nginx + oauth2-proxy.
+#
+# Assumes:
+#   - ingress-nginx is installed in the cluster
+#   - oauth2-proxy is reachable at the same hostname under /oauth2/*
+#     (see oauth2-proxy-values.yaml)
+#   - the OIDC bootstrap was run, and the JWKS / issuer are passed in
+#     via --set on the install command line.
+
+auth:
+  disabled: false
+  # jwksURL / issuer come from --set on the helm install command line.
+
+# Without this set, cross-origin WS upgrades would slip past nginx
+# auth_request (auth_request isn't invoked on the WS upgrade).
+wsAllowedOrigins: "https://porthole.example.com"
+
+opa:
+  enabled: true
+
+ecSweepTTL: "30m"
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    # ----- auth_request → oauth2-proxy --------------------------
+    # nginx asks oauth2-proxy whether the session is valid. When
+    # it isn't, the browser is redirected to /oauth2/start (which
+    # itself sits on the same host as a sibling Ingress — see the
+    # oauth2-proxy-values.yaml ingress section).
+    nginx.ingress.kubernetes.io/auth-url: "https://$host/oauth2/auth"
+    nginx.ingress.kubernetes.io/auth-signin: "https://$host/oauth2/start?rd=$escaped_request_uri"
+    # Pull oauth2-proxy's "Authorization: Bearer <id_token>" into
+    # the upstream request so porthole's JWT middleware sees it.
+    nginx.ingress.kubernetes.io/auth-response-headers: "Authorization"
+    # Tell ingress-nginx to also accept WebSocket upgrades.
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+  hosts:
+    - host: porthole.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: porthole-tls
+      hosts: [porthole.example.com]
