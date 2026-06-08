@@ -42,21 +42,15 @@ along the request path must terminate the OIDC handshake and inject
 
 The porthole chart is **gateway-implementation neutral** — it renders
 generic exposure resources (`Ingress`, Gateway API `HTTPRoute`,
-LoadBalancer `Service`) and lets you wire the OIDC layer yourself. Two
-worked recipes in [`docs/examples/`](./docs/examples/):
-
-| Recipe | OIDC layer | Data plane |
-|---|---|---|
-| [`envoy-gateway/`](./docs/examples/envoy-gateway/) | Envoy Gateway `SecurityPolicy.oidc` | Envoy Gateway |
-| [`traefik/`](./docs/examples/traefik/) | `sevensolutions/traefik-oidc-auth` plugin (community) | Traefik OSS |
-
-Both ship with a `values.yaml` you point `helm install` at, plus any
-vendor-specific CRD (e.g. the EG `SecurityPolicy`) applied separately.
+LoadBalancer `Service`) and lets you wire the OIDC layer yourself. One
+worked recipe in [`docs/examples/envoy-gateway/`](./docs/examples/envoy-gateway/):
+a `values.yaml` you point `helm install` at, plus the Envoy-Gateway
+`SecurityPolicy` CR applied separately.
 
 ### Other OSS gateways with OIDC
 
-The two recipes above aren't the only options. Other community gateways
-that handle OIDC in their OSS releases:
+Envoy Gateway isn't the only option. Other community stacks that
+handle OIDC and pair well with the chart's generic exposure resources:
 
 - **[oauth2-proxy](https://oauth2-proxy.github.io/oauth2-proxy/)** in
   front of any `auth_request`-capable ingress (ingress-nginx is the
@@ -71,10 +65,8 @@ that handle OIDC in their OSS releases:
   **[Authentik](https://goauthentik.io/)** as the OIDC layer in front
   of any `auth_request`-capable ingress.
 
-Note that Traefik OSS does not ship native OIDC — the recipe above
-loads the third-party `sevensolutions/traefik-oidc-auth` plugin via
-Traefik's plugin system. The chart's `ingress.annotations` field is
-the join point with most of these stacks.
+The chart's `ingress.annotations` field is the join point with most of
+these stacks.
 
 ### Run from source
 
@@ -291,8 +283,7 @@ attach lands here as `outcome:"denied"` with the OPA reason.
 ├── docs/
 │   ├── examples/           # ready-to-run example deployments
 │   │   ├── porthole/       # smallest install, no gateway, no auth
-│   │   ├── envoy-gateway/  # Envoy Gateway + OIDC SecurityPolicy
-│   │   └── traefik/        # Traefik OSS + traefik-oidc-auth plugin
+│   │   └── envoy-gateway/  # Envoy Gateway + OIDC SecurityPolicy
 │   └── *.svg               # architecture diagrams
 ├── deploy/                 # legacy ko-based manifests (superseded by the chart)
 ├── scripts/
