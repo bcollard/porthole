@@ -3,6 +3,9 @@
 # bootstrapping). Kept for the author's local reference.
 docs/private/
 
+# IDE config
+.idea/
+
 # Local OIDC secret produced by scripts/keycloak-bootstrap.sh.
 # Don't commit the real client secret.
 deploy/envoy-gateway/secret.yaml

@@ -294,7 +294,6 @@ attach lands here as `outcome:"denied"` with the OPA reason.
 │   │   ├── porthole/       # smallest install, no gateway, no auth
 │   │   └── envoy-gateway/  # Envoy Gateway + OIDC SecurityPolicy
 │   └── *.svg               # architecture diagrams
-├── deploy/                 # legacy ko-based manifests (superseded by the chart)
 ├── scripts/
 │   ├── keycloak-bootstrap.sh  # idempotent realm/client/user setup via curl
 │   ├── envoy-smoke.sh         # ROPC + curl through the gateway

@@ -18,11 +18,6 @@ type InjectPayload struct {
 	Command   string `json:"command"`
 }
 
-type PodNamespacePayload struct {
-	Namespace string `json:"namespace" binding:"required"`
-	Pod       string `json:"pod" binding:"required"`
-}
-
 const defaultDebugImage = "nicolaka/netshoot"
 
 // authDenyError lets the audit logger record an authZ deny as a real
@@ -87,18 +82,8 @@ func injectStatusFor(err error) int {
 	}
 }
 
-// List returns ephemeral containers for a pod identified by JSON body.
-// Kept for backward compat; new clients should use ListECByPath.
-func List(c *gin.Context) {
-	var payload PodNamespacePayload
-	if err := c.BindJSON(&payload); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON: " + err.Error()})
-		return
-	}
-	respondECList(c, payload.Namespace, payload.Pod)
-}
-
-// ListECByPath is the path-param variant used by the SPA.
+// ListECByPath returns ephemeral containers for a pod (path-param
+// variant used by the SPA).
 func ListECByPath(c *gin.Context) {
 	respondECList(c, c.Param("ns"), c.Param("pod"))
 }

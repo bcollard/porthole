@@ -5,25 +5,20 @@
 # needing a browser.
 #
 # Prerequisite: the realm/client/user was created via
-# scripts/keycloak-bootstrap.sh, and the client was configured with
-# `--direct-access-grants` (Token endpoint authentication: client_secret_basic).
-# The bootstrap script does not enable ROPC by default — re-create
-# the client with the --direct-access-grants flag if you want this test
-# to succeed:
-#   kc client delete -r porthole --client-id porthole
-#   kc client create -r porthole --client-id porthole \
-#     --secret "$CLIENT_SECRET" --standard-flow --direct-access-grants \
-#     --redirect-uri http://porthole.bco.runlocal.dev/oauth2/callback
+# scripts/keycloak-bootstrap.sh. ROPC requires the OAuth client to
+# have Direct Access Grants enabled — re-toggle that on the client
+# in Keycloak if the token request below fails with
+# "Direct access grants is not allowed".
 
 set -euo pipefail
 
-ISSUER="${ISSUER:-https://keycloak.kong.runlocal.dev/realms/porthole}"
+ISSUER="${ISSUER:?set ISSUER (e.g. https://keycloak.example.com/realms/porthole)}"
 CLIENT_ID="${CLIENT_ID:-porthole}"
 CLIENT_SECRET="${CLIENT_SECRET:?set CLIENT_SECRET to the secret printed by keycloak-bootstrap.sh}"
 USERNAME="${USERNAME:-demo}"
 PASSWORD="${PASSWORD:-demo}"
-HOST="${HOST:-porthole.bco.runlocal.dev}"
-GATEWAY_IP="${GATEWAY_IP:-$(kubectl get gateway porthole-gateway -o jsonpath='{.status.addresses[0].value}' 2>/dev/null || true)}"
+HOST="${HOST:?set HOST (e.g. porthole.example.com)}"
+GATEWAY_IP="${GATEWAY_IP:-$(kubectl get gateway porthole -o jsonpath='{.status.addresses[0].value}' 2>/dev/null || true)}"
 
 if [[ -z "$GATEWAY_IP" ]]; then
   echo "could not resolve gateway IP — is the Gateway applied?" >&2
