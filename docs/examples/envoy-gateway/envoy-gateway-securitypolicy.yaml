@@ -3,14 +3,14 @@
 # Applied separately from the porthole helm chart — the chart is
 # gateway-implementation neutral and stays free of EG-specific CRDs.
 #
-# Prerequisites:
-#   1. Envoy Gateway installed (helm install eg oci://docker.io/envoyproxy/gateway-helm).
-#   2. A Gateway named "eg" in the default namespace (kept in sync with
-#      docs/examples/envoy-gateway/values.yaml).
-#   3. An OIDC client provisioned (scripts/keycloak-bootstrap.sh).
-#   4. The OIDC client-secret stored as a kube Secret in this namespace
-#      (kubectl create secret generic porthole-oidc \
-#         --from-literal=client-secret=<paste>).
+# This example assumes porthole lives at api.example.com/porthole/.
+# Two URLs must include that prefix and stay in sync everywhere:
+#
+#   1. spec.oidc.redirectURL below
+#   2. the OAuth client's `redirectUris` list in Keycloak
+#      (scripts/keycloak-bootstrap.sh accepts REDIRECT_URI for this)
+#
+# Mismatch → Keycloak refuses with "Invalid parameter: redirect_uri".
 ---
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: SecurityPolicy
@@ -28,8 +28,8 @@ spec:
     clientID: "porthole"
     clientSecret:
       name: porthole-oidc
-    redirectURL: "https://porthole.example.com/oauth2/callback"
-    logoutPath: "/logout"
+    redirectURL: "https://api.example.com/porthole/oauth2/callback"
+    logoutPath: "/porthole/logout"
     scopes:
       - openid
       - profile

@@ -1,9 +1,9 @@
-# Helm values for porthole when fronted by Envoy Gateway.
+# Helm values for porthole when fronted by Envoy Gateway under a
+# shared API hostname at a sub-path. Tweak hostname + pathPrefix
+# to match where your platform team wants it to live.
 #
 # Pair with envoy-gateway-securitypolicy.yaml (applied separately —
 # it's an Envoy-Gateway-specific CR and shouldn't ship in this chart).
-#
-# Replace the hostnames and the parentRefs to match your Gateway.
 
 auth:
   disabled: false
@@ -11,7 +11,8 @@ auth:
   # jwksURL: "https://kc.example.com/realms/porthole/protocol/openid-connect/certs"
   # issuer:  "https://kc.example.com/realms/porthole"
 
-wsAllowedOrigins: "https://porthole.example.com"
+# Origin is scheme+host only — no path component. CSWSH defence.
+wsAllowedOrigins: "https://api.example.com"
 
 opa:
   enabled: true
@@ -21,7 +22,11 @@ ecSweepTTL: "30m"
 gatewayAPI:
   enabled: true
   hostnames:
-    - porthole.example.com
+    - api.example.com           # shared API gateway hostname
   parentRefs:
-    - name: eg              # name of the Gateway you already created
-      namespace: default    # adjust if it lives elsewhere
+    - name: eg                  # name of the platform-managed Gateway
+      namespace: default        # adjust if it lives elsewhere
+  # Public sub-path. Set to "/" if porthole owns its own hostname.
+  # Chart emits a 308 redirect /porthole → /porthole/ plus a
+  # URLRewrite that strips /porthole before forwarding upstream.
+  pathPrefix: /porthole

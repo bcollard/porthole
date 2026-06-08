@@ -156,6 +156,17 @@ gatewayAPI:
     - name: my-gateway
       # namespace: gateway-system
       # sectionName: http
+  # Public path prefix the gateway will route to porthole. Keep "/"
+  # when porthole owns the whole hostname (e.g. porthole.example.com).
+  # Set to a sub-path (e.g. "/porthole") to share a hostname with
+  # other services — the chart will generate:
+  #   1. an Exact-match RequestRedirect from /<prefix> → /<prefix>/
+  #      (so URLs without the trailing slash still work)
+  #   2. a PathPrefix match on /<prefix> with a URLRewrite filter
+  #      that strips the prefix before the request hits porthole.
+  # The SPA infers the public prefix from window.location.pathname,
+  # so no server-side config change is needed.
+  pathPrefix: "/"
   gateway:
     create: false
     className: ""

@@ -2,6 +2,15 @@ import { Terminal } from "https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/+esm";
 import { FitAddon } from "https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/+esm";
 import { WebLinksAddon } from "https://cdn.jsdelivr.net/npm/@xterm/addon-web-links@0.11.0/+esm";
 
+// Public base path. The SPA is always served at "<basePath>/ui/", so
+// the prefix is whatever sits in front of "/ui/" in the page URL. This
+// lets a single build serve at "/" (no gateway prefix) or under any
+// sub-path (e.g. "/porthole" when fronted by a shared API gateway).
+const BASE_PATH = (() => {
+  const m = window.location.pathname.match(/^(.*)\/ui\/?/);
+  return m ? m[1] : "";
+})();
+
 const state = {
   config: null,
   namespaces: [],
@@ -118,7 +127,7 @@ function authHeader() {
 
 async function http(path, opts = {}) {
   const headers = Object.assign({}, opts.headers || {}, authHeader());
-  const res = await fetch(path, { ...opts, headers });
+  const res = await fetch(BASE_PATH + path, { ...opts, headers });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`${res.status} ${res.statusText}${text ? ": " + text : ""}`);
@@ -370,7 +379,7 @@ function attachToEc(ecName) {
 
   const wsScheme = window.location.protocol === "https:" ? "wss:" : "ws:";
   const url =
-    `${wsScheme}//${window.location.host}` +
+    `${wsScheme}//${window.location.host}${BASE_PATH}` +
     `/term/${encodeURIComponent(state.selectedNs)}/${encodeURIComponent(state.selectedPod)}/${encodeURIComponent(ecName)}`;
 
   setStatus("connecting", "Connecting…");

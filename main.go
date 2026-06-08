@@ -22,11 +22,13 @@ func router(jwtMW gin.HandlerFunc) http.Handler {
 	r.Use(corsMiddleware())
 
 	// ----- public (no auth) -----
+	// /ui/ is the only SPA entrypoint. The HTML uses relative paths
+	// for style.css/app.js, so a single build serves correctly both
+	// at the root and under any gateway-supplied sub-path (e.g.
+	// api.example.com/porthole/ui/ when fronted by a shared gateway
+	// that strips the /porthole prefix).
 	r.StaticFS("/ui", web.FS())
-	r.GET("/", func(c *gin.Context) { c.Redirect(http.StatusFound, "/ui/") })
-	r.GET("/index.html", func(c *gin.Context) { c.FileFromFS("index.html", web.FS()) })
-	r.GET("/app.js", func(c *gin.Context) { c.FileFromFS("app.js", web.FS()) })
-	r.GET("/style.css", func(c *gin.Context) { c.FileFromFS("style.css", web.FS()) })
+	r.GET("/", func(c *gin.Context) { c.Redirect(http.StatusFound, "ui/") })
 	r.GET("/api/config", controllers.GetConfig)
 
 	// ----- protected (JWT required, OPA-authorized inside the handlers) -----

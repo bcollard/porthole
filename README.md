@@ -47,6 +47,15 @@ worked recipe in [`docs/examples/envoy-gateway/`](./docs/examples/envoy-gateway/
 a `values.yaml` you point `helm install` at, plus the Envoy-Gateway
 `SecurityPolicy` CR applied separately.
 
+**Sub-path hosting** — the chart accepts `gatewayAPI.pathPrefix` so
+porthole can share a hostname with other backends behind a platform
+gateway (e.g. `api.example.com/porthole`). The chart emits a 308
+redirect for the trailing-slash case and a URLRewrite filter that
+strips the prefix before forwarding upstream; the SPA infers the
+public prefix from `window.location.pathname` at boot. No server-side
+config and no rebuild — one image serves at root *or* under any
+sub-path.
+
 ### Other OSS gateways with OIDC
 
 Envoy Gateway isn't the only option. Other community stacks that
