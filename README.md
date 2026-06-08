@@ -48,7 +48,7 @@ worked recipes in [`docs/examples/`](./docs/examples/):
 | Recipe | OIDC layer | Data plane |
 |---|---|---|
 | [`envoy-gateway/`](./docs/examples/envoy-gateway/) | Envoy Gateway `SecurityPolicy.oidc` | Envoy Gateway |
-| [`oauth2-proxy/`](./docs/examples/oauth2-proxy/) | oauth2-proxy via nginx `auth_request` | ingress-nginx |
+| [`traefik/`](./docs/examples/traefik/) | `sevensolutions/traefik-oidc-auth` plugin (community) | Traefik OSS |
 
 Both ship with a `values.yaml` you point `helm install` at, plus any
 vendor-specific CRD (e.g. the EG `SecurityPolicy`) applied separately.
@@ -58,20 +58,23 @@ vendor-specific CRD (e.g. the EG `SecurityPolicy`) applied separately.
 The two recipes above aren't the only options. Other community gateways
 that handle OIDC in their OSS releases:
 
-- **[Pomerium](https://www.pomerium.com/)** — identity-aware proxy with
-  native OIDC, OPA-compatible policy. Standalone (not a generic
+- **[oauth2-proxy](https://oauth2-proxy.github.io/oauth2-proxy/)** in
+  front of any `auth_request`-capable ingress (ingress-nginx is the
+  most common). De-facto OSS pattern.
+- **[Pomerium](https://www.pomerium.com/)** — identity-aware proxy
+  with native OIDC, OPA-compatible policy. Standalone (not a generic
   ingress).
-- **[Traefik](https://traefik.io/)** + community
-  [`traefik-forward-auth`](https://github.com/thomseddon/traefik-forward-auth)
-  middleware.
 - **[Caddy](https://caddyserver.com/)** + the third-party
-  [`caddy-security`](https://github.com/greenpau/caddy-security) module.
+  [`caddy-security`](https://github.com/greenpau/caddy-security)
+  module.
 - **[Authelia](https://www.authelia.com/)** or
-  **[Authentik](https://goauthentik.io/)** as the OIDC layer in front of
-  any auth_request-capable ingress (nginx, Traefik, Caddy).
+  **[Authentik](https://goauthentik.io/)** as the OIDC layer in front
+  of any `auth_request`-capable ingress.
 
-The chart's `ingress.annotations` field is the join point with most of
-those.
+Note that Traefik OSS does not ship native OIDC — the recipe above
+loads the third-party `sevensolutions/traefik-oidc-auth` plugin via
+Traefik's plugin system. The chart's `ingress.annotations` field is
+the join point with most of these stacks.
 
 ### Run from source
 
@@ -289,7 +292,7 @@ attach lands here as `outcome:"denied"` with the OPA reason.
 │   ├── examples/           # ready-to-run example deployments
 │   │   ├── porthole/       # smallest install, no gateway, no auth
 │   │   ├── envoy-gateway/  # Envoy Gateway + OIDC SecurityPolicy
-│   │   └── oauth2-proxy/   # ingress-nginx + oauth2-proxy auth_request
+│   │   └── traefik/        # Traefik OSS + traefik-oidc-auth plugin
 │   └── *.svg               # architecture diagrams
 ├── deploy/                 # legacy ko-based manifests (superseded by the chart)
 ├── scripts/

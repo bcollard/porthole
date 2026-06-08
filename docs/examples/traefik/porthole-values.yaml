@@ -1,0 +1,39 @@
+# Helm values for porthole when fronted by Traefik + the
+# traefik-oidc-auth community plugin.
+#
+# Assumes:
+#   - Traefik is installed with the OIDC plugin (see traefik-values.yaml)
+#   - oidc-middleware.yaml has been applied in this namespace
+#   - the OIDC bootstrap was run, and JWKS / issuer are passed in
+#     via --set on the install command line.
+
+auth:
+  disabled: false
+  # jwksURL / issuer come from --set on the helm install command line.
+
+# Traefik runs middleware on the WS upgrade, so the OIDC handshake
+# is enforced there too. wsAllowedOrigins is defence-in-depth — if a
+# session cookie ever leaks cross-origin, porthole still refuses the
+# upgrade.
+wsAllowedOrigins: "https://porthole.example.com"
+
+opa:
+  enabled: true
+
+ecSweepTTL: "30m"
+
+ingress:
+  enabled: true
+  className: traefik
+  annotations:
+    # Attach the OIDC Middleware (Traefik CRD applied separately).
+    # The annotation format is <namespace>-<middleware-name>@kubernetescrd.
+    traefik.ingress.kubernetes.io/router.middlewares: "porthole-oidc@kubernetescrd"
+  hosts:
+    - host: porthole.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: porthole-tls
+      hosts: [porthole.example.com]

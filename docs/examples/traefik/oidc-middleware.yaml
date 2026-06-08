@@ -1,0 +1,45 @@
+# Traefik Middleware that wires the `traefik-oidc-auth` plugin into
+# the request path. Applied in the porthole namespace so the
+# router.middlewares annotation on the porthole Ingress can reach it.
+#
+# Field names track sevensolutions/traefik-oidc-auth as of v0.13.x.
+# Check the plugin README before bumping the version in
+# traefik-values.yaml.
+#
+# The client secret is sourced from an env var that lives on the
+# Traefik pod (via envFrom in traefik-values.yaml → secretRef
+# porthole-oidc → key `client-secret`). The plugin reads
+# ${CLIENT_SECRET} from the proxy process's environment.
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: oidc
+  namespace: porthole
+spec:
+  plugin:
+    traefikOidcAuth:
+      Provider:
+        Url: "https://keycloak.example.com/realms/porthole"
+        ClientId: "porthole"
+        # Read the secret from the proxy's environment — the kube
+        # Secret `porthole-oidc` is mounted via envFrom on Traefik.
+        # Key in that Secret: client-secret  →  env var: CLIENT_SECRET
+        ClientSecretEnv: "client-secret"
+      Scopes:
+        - openid
+        - profile
+        - email
+      # Forward Authorization: Bearer <access_token> upstream so the
+      # porthole JWT middleware validates it against the Keycloak JWKS.
+      Headers:
+        - Name: "Authorization"
+          Value: "Bearer {{`{{ .accessToken }}`}}"
+      # Cookie + endpoints
+      LoginUri: "/oauth2/login"
+      LogoutUri: "/oauth2/logout"
+      CallbackUri: "/oauth2/callback"
+      SessionCookie:
+        Name: "porthole_session"
+        Secure: true
+        SameSite: "lax"

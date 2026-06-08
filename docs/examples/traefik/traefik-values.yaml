@@ -1,0 +1,52 @@
+# Traefik helm chart values for the porthole example.
+# Repo: https://traefik.github.io/charts
+#
+# Declares the community OIDC plugin via Traefik's experimental
+# plugin system. Traefik downloads the plugin at startup, so this
+# requires network egress from the Traefik pod to plugins.traefik.io
+# (or a private plugin registry if you mirror).
+
+# Make the proxy reachable as a LoadBalancer; switch to NodePort
+# (+ port-forward) when running on kind without MetalLB.
+service:
+  type: LoadBalancer
+
+# WebSocket needs generous timeouts.
+ports:
+  web:
+    redirectTo:
+      port: websecure
+  websecure:
+    tls:
+      enabled: true
+
+additionalArguments:
+  - "--entrypoints.websecure.transport.respondingTimeouts.readTimeout=3600s"
+  - "--entrypoints.websecure.transport.respondingTimeouts.idleTimeout=3600s"
+
+# ----- experimental plugins -------------------------------------
+# The middleware spec in oidc-middleware.yaml refers to this plugin
+# by the key "traefikOidcAuth".
+experimental:
+  plugins:
+    traefikOidcAuth:
+      moduleName: "github.com/sevensolutions/traefik-oidc-auth"
+      version: "v0.13.0"  # pin a tagged release; bump after reading the changelog
+
+# Allow Traefik to access the OIDC client-secret Secret in the
+# porthole namespace (we'll reference it via envFrom on the
+# deployment so the plugin can resolve ${CLIENT_SECRET}).
+deployment:
+  additionalContainers: []
+  additionalVolumes: []
+
+# Mount the OIDC client-secret as an env var so the Middleware can
+# reference it without inlining the secret value.
+envFrom:
+  - secretRef:
+      name: porthole-oidc
+      optional: false
+
+# Note: by default Traefik watches Ingress / IngressRoute resources
+# in all namespaces. If you've narrowed `providers.kubernetesIngress.namespaces`
+# in your installation, add `porthole` to it.
