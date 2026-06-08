@@ -18,12 +18,16 @@ CLIENT_SECRET="${CLIENT_SECRET:?set CLIENT_SECRET to the secret printed by keycl
 USERNAME="${USERNAME:-demo}"
 PASSWORD="${PASSWORD:-demo}"
 HOST="${HOST:?set HOST (e.g. porthole.example.com)}"
-GATEWAY_IP="${GATEWAY_IP:-$(kubectl get gateway porthole -o jsonpath='{.status.addresses[0].value}' 2>/dev/null || true)}"
-
-if [[ -z "$GATEWAY_IP" ]]; then
-  echo "could not resolve gateway IP — is the Gateway applied?" >&2
-  exit 1
-fi
+# Public sub-path porthole is served at (empty = root). Must match
+# the chart's gatewayAPI.pathPrefix.
+PATH_PREFIX="${PATH_PREFIX:-}"
+# Scheme of the gateway listener. The chart's example HTTPS Gateway
+# uses 443; set SCHEME=http for a plain Gateway.
+SCHEME="${SCHEME:-https}"
+# Override only when the cluster has no DNS resolver wired up to the
+# Gateway's LoadBalancer (kind without MetalLB, etc.). When set,
+# we pin the curl request to that IP via --resolve.
+GATEWAY_IP="${GATEWAY_IP:-}"
 
 echo ">> fetching access_token from $ISSUER"
 TOKEN_RESP=$(curl -sS -X POST "$ISSUER/protocol/openid-connect/token" \
@@ -41,10 +45,16 @@ if [[ -z "$ACCESS_TOKEN" || "$ACCESS_TOKEN" == "null" ]]; then
   exit 1
 fi
 
-echo ">> calling Porthole via $HOST ($GATEWAY_IP) with bearer token"
-curl -sS -H "Host: $HOST" -H "Authorization: Bearer $ACCESS_TOKEN" \
-  "http://$GATEWAY_IP/api/config" | jq .
+CURL_ARGS=(-sS -H "Authorization: Bearer $ACCESS_TOKEN")
+if [[ -n "$GATEWAY_IP" ]]; then
+  PORT=443
+  [[ "$SCHEME" == "http" ]] && PORT=80
+  CURL_ARGS+=(--resolve "$HOST:$PORT:$GATEWAY_IP")
+fi
+
+BASE="$SCHEME://$HOST$PATH_PREFIX"
+echo ">> calling Porthole at $BASE with bearer token"
+curl "${CURL_ARGS[@]}" "$BASE/api/config" | jq .
 
 echo ">> /explore"
-curl -sS -H "Host: $HOST" -H "Authorization: Bearer $ACCESS_TOKEN" \
-  "http://$GATEWAY_IP/explore" | jq .
+curl "${CURL_ARGS[@]}" "$BASE/explore" | jq .
