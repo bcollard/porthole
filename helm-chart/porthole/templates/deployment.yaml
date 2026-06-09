@@ -62,6 +62,10 @@ spec:
             - name: EC_SWEEP_TTL
               value: {{ .Values.ecSweepTTL | quote }}
             {{- end }}
+            {{- if .Values.logoutPath }}
+            - name: LOGOUT_PATH
+              value: {{ .Values.logoutPath | quote }}
+            {{- end }}
           {{- with .Values.resources }}
           resources:
             {{- toYaml . | nindent 12 }}

@@ -26,15 +26,23 @@ import future.keywords.in
 
 default decision := {"allow": false, "reason": "default deny"}
 
-decision := {"allow": true, "reason": reason} if {
-	some binding in data.policy.bindings
-	binding.group in input.user.groups
-	matches_namespace(binding, input.request.namespace)
-	input.request.action in data.policy.roles[binding.role]
-	not violates_time_window(binding)
-	reason := sprintf("matched: group=%v role=%v ns=%v", [
-		binding.group, binding.role, input.request.namespace,
-	])
+# Collect every matching binding via an array comprehension so the
+# complete `decision` rule has a single deterministic output even when
+# several bindings grant the same request (e.g. team-a is both
+# debugger on ns-a and viewer on *). Emitting `decision` once per
+# match would trip OPA's eval_conflict_error.
+decision := {"allow": true, "reason": concat("; ", reasons)} if {
+	reasons := [r |
+		some binding in data.policy.bindings
+		binding.group in input.user.groups
+		matches_namespace(binding, input.request.namespace)
+		input.request.action in data.policy.roles[binding.role]
+		not violates_time_window(binding)
+		r := sprintf("matched: group=%v role=%v ns=%v", [
+			binding.group, binding.role, input.request.namespace,
+		])
+	]
+	count(reasons) > 0
 }
 
 # Cluster-wide actions: namespace == "". Only an unconditional "*"

@@ -14,9 +14,10 @@ import (
 )
 
 type EphemeralContainer struct {
-	Name    string
-	Command []string
-	Running bool
+	Name       string
+	Command    []string
+	Running    bool
+	Terminated bool
 }
 
 func List(c *gin.Context, namespace string, podName string) ([]EphemeralContainer, error) {
@@ -32,17 +33,24 @@ func List(c *gin.Context, namespace string, podName string) ([]EphemeralContaine
 
 	out := make([]EphemeralContainer, 0, len(pod.Spec.EphemeralContainers))
 	for _, container := range pod.Spec.EphemeralContainers {
-		running := false
+		var running, terminated bool
 		for _, st := range pod.Status.EphemeralContainerStatuses {
-			if st.Name == container.Name && st.State.Running != nil {
-				running = true
-				break
+			if st.Name != container.Name {
+				continue
 			}
+			if st.State.Running != nil {
+				running = true
+			}
+			if st.State.Terminated != nil {
+				terminated = true
+			}
+			break
 		}
 		out = append(out, EphemeralContainer{
-			Name:    container.Name,
-			Command: container.Command,
-			Running: running,
+			Name:       container.Name,
+			Command:    container.Command,
+			Running:    running,
+			Terminated: terminated,
 		})
 	}
 	return out, nil

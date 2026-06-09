@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -113,9 +114,52 @@ func respondECList(c *gin.Context, ns, pod string) {
 // GetConfig returns runtime configuration for the SPA. The WS URL is
 // no longer advertised here — REST and WS share an origin now, so the
 // browser derives ws[s]://<window.location.host> on its own.
+//
+// logoutPath comes from the LOGOUT_PATH env (default /logout) — it
+// must mirror the OIDC gateway's logoutPath (e.g. Envoy Gateway's
+// SecurityPolicy.oidc.logoutPath). The SPA prepends BASE_PATH to it
+// when building the Logout link.
 func GetConfig(c *gin.Context) {
+	logoutPath := os.Getenv("LOGOUT_PATH")
+	if logoutPath == "" {
+		logoutPath = "/logout"
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"defaultImage": defaultDebugImage,
+		"logoutPath":   logoutPath,
+	})
+}
+
+// CleanupOne terminates a single porthole-injected ephemeral
+// container. Non-porthole-* EC names are refused at the
+// ephemeral-package boundary (TerminateByName).
+func CleanupOne(c *gin.Context) {
+	start := time.Now()
+	ns := c.Param("ns")
+	pod := c.Param("pod")
+	ec := c.Param("ec")
+	if !auth.AuthorizeOrAbort(c, auth.ActionTerminateEC, ns, pod) {
+		audit.LogCleanup(c, start, ns, pod, map[string]string{"ec": ec}, authDeny("authz"))
+		return
+	}
+	if err := ephemeral.TerminateByName(c, ns, pod, ec); err != nil {
+		audit.LogCleanup(c, start, ns, pod, map[string]string{"ec": ec}, err)
+		status := http.StatusBadGateway
+		switch {
+		case strings.Contains(err.Error(), "not found"):
+			status = http.StatusNotFound
+		case strings.Contains(err.Error(), "refusing to terminate"):
+			status = http.StatusForbidden
+		}
+		c.JSON(status, gin.H{"error": err.Error()})
+		return
+	}
+	audit.LogCleanup(c, start, ns, pod, map[string]string{"ec": ec}, nil)
+	c.JSON(http.StatusOK, gin.H{
+		"namespace": ns,
+		"pod":       pod,
+		"ec":        ec,
+		"ok":        true,
 	})
 }
 

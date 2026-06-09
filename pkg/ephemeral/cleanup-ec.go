@@ -44,6 +44,18 @@ type Terminated struct {
 	Error string `json:"error,omitempty"`
 }
 
+// TerminateByName terminates a single porthole-injected ephemeral
+// container by name. Refuses to touch ECs whose name lacks the
+// porthole prefix — same defensive filter as Cleanup, so neither
+// the UI nor a stray script can ask us to kill PID 1 in an EC we
+// didn't create.
+func TerminateByName(ctx context.Context, ns, pod, ec string) error {
+	if !strings.HasPrefix(ec, PortholeECPrefix) {
+		return fmt.Errorf("refusing to terminate non-porthole EC %q", ec)
+	}
+	return terminateOne(ctx, ns, pod, ec)
+}
+
 // Cleanup terminates every running porthole-injected ephemeral
 // container in (ns, pod). Returns a per-EC report.
 func Cleanup(ctx context.Context, ns, pod string) ([]Terminated, error) {
