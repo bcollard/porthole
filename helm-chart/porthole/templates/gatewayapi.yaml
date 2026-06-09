@@ -9,6 +9,10 @@ metadata:
     {{- include "porthole.labels" . | nindent 4 }}
 spec:
   gatewayClassName: {{ required "gatewayAPI.gateway.className is required when gateway.create=true" .Values.gatewayAPI.gateway.className }}
+  {{- with .Values.gatewayAPI.gateway.infrastructure }}
+  infrastructure:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
   listeners:
     - name: {{ .Values.gatewayAPI.gateway.listenerName }}
       protocol: {{ .Values.gatewayAPI.gateway.protocol }}
@@ -61,7 +65,7 @@ spec:
             path:
               type: ReplaceFullPath
               replaceFullPath: {{ printf "%s/" $stripped | quote }}
-            statusCode: 308
+            statusCode: 301
     # Sub-path routing: strip the public prefix before forwarding so
     # porthole keeps serving at root and stays prefix-agnostic.
     - matches:

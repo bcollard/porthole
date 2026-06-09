@@ -175,6 +175,18 @@ gatewayAPI:
     protocol: HTTP
     # When set, the listener uses HTTPS terminating at this secret.
     tlsSecretName: ""
+    # Optional Gateway `spec.infrastructure` block — Gateway API
+    # standard, vendor-neutral. Use to attach implementation
+    # parameters (e.g. an Envoy Gateway `EnvoyProxy` CR) per-Gateway
+    # without patching the cluster-wide GatewayClass. The referenced
+    # resource must live in the chart's Release namespace.
+    infrastructure: {}
+    # Example — Envoy Gateway, pinning the proxy Service type:
+    # infrastructure:
+    #   parametersRef:
+    #     group: gateway.envoyproxy.io
+    #     kind: EnvoyProxy
+    #     name: porthole-proxy
 
 resources: {}
 nodeSelector: {}
