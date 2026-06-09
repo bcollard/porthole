@@ -87,10 +87,14 @@ func NewJWTMiddleware(cfg JWTConfig) (gin.HandlerFunc, error) {
 			}
 		}
 		p := &Principal{
-			Sub:    str(claims["sub"]),
-			Email:  str(claims["email"]),
-			Groups: groups(claims),
-			Raw:    raw,
+			Sub:               str(claims["sub"]),
+			Email:             str(claims["email"]),
+			Groups:            groups(claims),
+			PreferredUsername: str(claims["preferred_username"]),
+			Name:              str(claims["name"]),
+			GivenName:         str(claims["given_name"]),
+			FamilyName:        str(claims["family_name"]),
+			Raw:               raw,
 		}
 		c.Set(principalKey, p)
 		c.Set("user", p.Sub)
@@ -102,9 +106,8 @@ func bearer(c *gin.Context) string {
 	if h := c.GetHeader("X-ID-Token"); h != "" {
 		return h
 	}
-	h := c.GetHeader("Authorization")
-	if strings.HasPrefix(h, "Bearer ") {
-		return strings.TrimPrefix(h, "Bearer ")
+	if tok, ok := strings.CutPrefix(c.GetHeader("Authorization"), "Bearer "); ok {
+		return tok
 	}
 	return ""
 }

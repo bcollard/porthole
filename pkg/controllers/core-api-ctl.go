@@ -32,6 +32,19 @@ func GetNamespaces(c *gin.Context) {
 	c.IndentedJSON(http.StatusOK, nsList)
 }
 
+// GetMe returns the validated Principal the JWT middleware stamped
+// onto the context. The SPA uses it to render the connected user in
+// the topbar. Mounted under the protected route group so the JWT has
+// already been parsed by the time we reach this handler.
+func GetMe(c *gin.Context) {
+	p, ok := auth.PrincipalFromContext(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "no principal"})
+		return
+	}
+	c.JSON(http.StatusOK, p)
+}
+
 func GetPods(c *gin.Context) {
 	namespace := c.Param("ns")
 	if !auth.AuthorizeOrAbort(c, auth.ActionListPods, namespace, "") {

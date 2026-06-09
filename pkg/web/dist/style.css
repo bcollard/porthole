@@ -105,6 +105,40 @@ body {
   50% { opacity: 0.4; }
 }
 
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+.user {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  border-left: 1px solid var(--border);
+  padding-left: 14px;
+}
+.user[hidden] { display: none; }
+.user-name {
+  color: var(--text);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.user-logout {
+  color: var(--text-dim);
+  text-decoration: none;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  transition: all 0.12s;
+}
+.user-logout:hover {
+  color: var(--red);
+  border-color: var(--red);
+}
+
 /* ---------- layout ---------- */
 main {
   flex: 1;

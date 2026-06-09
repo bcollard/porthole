@@ -142,6 +142,44 @@ async function loadConfig() {
   $("image-input").placeholder = state.config.defaultImage || "debug image";
 }
 
+// ---------- principal / logout ----------
+// Best-guess display name from the JWT claims the server gave us.
+// Keycloak's defaults: `name` (when first/last set), `given_name`,
+// `preferred_username`, then the email local-part as a fallback.
+function displayName(p) {
+  return (
+    p.given_name ||
+    (p.name && p.name.split(" ")[0]) ||
+    p.preferred_username ||
+    (p.email && p.email.split("@")[0]) ||
+    p.sub ||
+    "unknown"
+  );
+}
+
+async function loadMe() {
+  const userEl = $("user");
+  const nameEl = $("user-name");
+  const logoutEl = $("user-logout");
+  try {
+    const me = await http("/api/me");
+    nameEl.textContent = displayName(me);
+    nameEl.title = me.email || me.sub || "";
+    // AUTH_DISABLED stamps a fixed local-dev principal; there's no
+    // OIDC layer to log out from, so hide the link.
+    if (me.sub === "local-dev") {
+      logoutEl.hidden = true;
+    } else {
+      logoutEl.href = BASE_PATH + "/logout";
+    }
+    userEl.hidden = false;
+  } catch (e) {
+    // /api/me requires auth; if it fails we just don't render the
+    // user widget — the rest of the UI degrades cleanly.
+    console.warn("loadMe:", e.message);
+  }
+}
+
 async function loadNamespaces() {
   try {
     state.namespaces = await http("/explore");
@@ -447,6 +485,7 @@ async function init() {
   setupFilters();
   $("inject-btn").addEventListener("click", injectDebugger);
   await loadConfig();
+  await loadMe();
   await loadNamespaces();
 }
 

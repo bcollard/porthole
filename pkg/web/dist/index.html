@@ -18,9 +18,15 @@
     <h1>Porthole</h1>
     <span class="tagline">Kubernetes debugging</span>
   </div>
-  <div class="status" id="status" role="status" aria-live="polite">
-    <span class="dot"></span>
-    <span id="status-text">Idle</span>
+  <div class="topbar-right">
+    <div class="status" id="status" role="status" aria-live="polite">
+      <span class="dot"></span>
+      <span id="status-text">Idle</span>
+    </div>
+    <div class="user" id="user" hidden>
+      <span class="user-name" id="user-name"></span>
+      <a class="user-logout" id="user-logout" href="#" title="Sign out">Logout</a>
+    </div>
   </div>
 </header>
 

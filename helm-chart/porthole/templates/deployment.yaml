@@ -75,6 +75,11 @@ spec:
             - "--server"
             - "--addr=0.0.0.0:8181"
             - "--log-level=info"
+            # Skip kubelet's ..data / ..<timestamp> ConfigMap snapshot
+            # dirs — otherwise OPA loads porthole.rego twice (via the
+            # symlink and via the snapshot) and bails with
+            # "multiple default rules".
+            - "--ignore=..*"
             - "/policies"
           ports:
             - name: opa

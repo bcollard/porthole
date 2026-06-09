@@ -28,12 +28,24 @@ func router(jwtMW gin.HandlerFunc) http.Handler {
 	// api.example.com/porthole/ui/ when fronted by a shared gateway
 	// that strips the /porthole prefix).
 	r.StaticFS("/ui", web.FS())
-	r.GET("/", func(c *gin.Context) { c.Redirect(http.StatusFound, "ui/") })
+	// Write the Location header manually instead of c.Redirect: Go's
+	// http.Redirect absolutizes a relative target against the backend
+	// request path, which is "/" after the gateway's URLRewrite strips
+	// the sub-path prefix — so "ui/" would become "/ui/" and the
+	// browser would lose "/porthole". Sending "ui/" verbatim lets the
+	// browser resolve it against the address-bar URL (RFC 7231 §7.1.2),
+	// preserving whatever public prefix sits in front.
+	r.GET("/", func(c *gin.Context) {
+		c.Header("Location", "ui/")
+		c.Status(http.StatusFound)
+	})
 	r.GET("/api/config", controllers.GetConfig)
 
 	// ----- protected (JWT required, OPA-authorized inside the handlers) -----
 	api := r.Group("/")
 	api.Use(jwtMW)
+
+	api.GET("/api/me", controllers.GetMe)
 
 	api.GET("/explore", controllers.GetNamespaces)
 	api.GET("/explore/ns/:ns", controllers.GetPods)
