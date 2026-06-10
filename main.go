@@ -49,6 +49,7 @@ func router(jwtMW gin.HandlerFunc) http.Handler {
 
 	api.GET("/explore", controllers.GetNamespaces)
 	api.GET("/explore/ns/:ns", controllers.GetPods)
+	api.GET("/explore/ns/:ns/pods/:pod", controllers.GetPod)
 	api.GET("/explore/ns/:ns/pods/:pod/ec", controllers.ListECByPath)
 
 	api.POST("/debug/inject", controllers.Inject)

@@ -270,11 +270,45 @@ input::placeholder { color: var(--text-dim); }
 .target {
   font-family: var(--font-mono);
   font-size: 13px;
+  min-width: 0;            /* allow ellipsis inside flex parent */
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.target .muted { color: var(--text-muted); margin-right: 6px; }
+.target-line {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.target .muted { color: var(--text-muted); margin-right: 6px; }
+.target-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+}
+.target-labels:empty { display: none; }
+.target-label {
+  display: inline-flex;
+  align-items: baseline;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 7px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.4;
+  max-width: 280px;
+  color: var(--text-muted);
+}
+.target-label-k { color: var(--text); }
+.target-label-eq { color: var(--text-dim); margin: 0 2px; }
+.target-label-v {
+  color: var(--accent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 220px;
+}
 .actions { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
 .actions input[type="text"] {
   width: 240px;

@@ -266,6 +266,36 @@ async function loadEphemeralContainers(ns, pod) {
   }
 }
 
+async function loadPodDetail(ns, pod) {
+  // Best-effort — failure just leaves the labels strip empty.
+  try {
+    const r = await http(`/explore/ns/${encodeURIComponent(ns)}/pods/${encodeURIComponent(pod)}`);
+    state.podDetail = r;
+  } catch (e) {
+    state.podDetail = null;
+  }
+  renderTargetLabels();
+}
+
+function renderTargetLabels() {
+  const bar = $("target-labels");
+  if (!bar) return;
+  bar.innerHTML = "";
+  const labels = (state.podDetail && state.podDetail.labels) || {};
+  const keys = Object.keys(labels).sort();
+  if (!state.selectedPod || keys.length === 0) return;
+  for (const k of keys) {
+    const chip = document.createElement("span");
+    chip.className = "target-label";
+    chip.title = `${k}=${labels[k]}`;
+    chip.innerHTML =
+      `<span class="target-label-k">${escapeHtml(k)}</span>` +
+      `<span class="target-label-eq">=</span>` +
+      `<span class="target-label-v">${escapeHtml(labels[k])}</span>`;
+    bar.appendChild(chip);
+  }
+}
+
 // ---------- render ----------
 function renderNamespaces() {
   const filter = $("ns-filter").value.toLowerCase();
@@ -497,6 +527,7 @@ function selectNamespace(ns) {
   state.selectedEc = null;
   state.pods = [];
   state.ecs = [];
+  state.podDetail = null;
   $("ns-current").textContent = ns;
   $("inject-btn").disabled = true;
   closeWebsocket();
@@ -504,6 +535,7 @@ function selectNamespace(ns) {
   renderPods();
   renderECBar();
   updateTargetText();
+  renderTargetLabels();
   loadPods(ns);
 }
 
@@ -512,12 +544,15 @@ function selectPod(pod) {
   state.selectedPod = pod;
   state.selectedEc = null;
   state.ecs = [];
+  state.podDetail = null;
   $("inject-btn").disabled = false;
   closeWebsocket();
   renderPods();
   renderECBar();
   updateTargetText();
+  renderTargetLabels();
   loadEphemeralContainers(state.selectedNs, pod);
+  loadPodDetail(state.selectedNs, pod);
 }
 
 // ---------- inject ----------

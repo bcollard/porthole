@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/bcollard/porthole/pkg/auth"
 	"github.com/bcollard/porthole/pkg/kubeconfig"
@@ -68,4 +69,42 @@ func GetPods(c *gin.Context) {
 		podList = append(podList, pod.ObjectMeta.Name)
 	}
 	c.IndentedJSON(http.StatusOK, podList)
+}
+
+// GetPod returns metadata for a single pod — currently just labels.
+// The SPA shows these under the Target header so the operator has
+// context (team, tier, app) before they inject a debug container.
+// Same OPA action as the list — if you can list pods in this ns
+// you can see one pod's labels.
+func GetPod(c *gin.Context) {
+	ns := c.Param("ns")
+	name := c.Param("pod")
+	if !auth.AuthorizeOrAbort(c, auth.ActionListPods, ns, name) {
+		return
+	}
+
+	client, _, err := kubeconfig.GetKubClient()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "kubeconfig: " + err.Error()})
+		return
+	}
+
+	pod, err := client.CoreV1().Pods(ns).Get(c, name, v1.GetOptions{})
+	if err != nil {
+		status := http.StatusBadGateway
+		if strings.Contains(err.Error(), "not found") {
+			status = http.StatusNotFound
+		}
+		c.JSON(status, gin.H{"error": "get pod: " + err.Error()})
+		return
+	}
+
+	labels := pod.ObjectMeta.Labels
+	if labels == nil {
+		labels = map[string]string{}
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"name":   pod.ObjectMeta.Name,
+		"labels": labels,
+	})
 }
