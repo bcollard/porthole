@@ -162,8 +162,36 @@ main {
   flex-direction: column;
   border-bottom: 1px solid var(--border);
   padding: 14px;
+  position: relative;        /* anchor for .overflow-hint */
 }
 .panel:last-child { border-bottom: none; }
+.panel.svc-panel { flex: 0.5; }   /* compact — Services is a reference, not a primary list */
+
+/* Bottom fade + ▾ shown only when the list overflows and we're
+   not already scrolled to the end. Pure visual hint — click events
+   pass through (pointer-events:none). */
+.overflow-hint {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 26px;
+  pointer-events: none;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: linear-gradient(
+    to bottom,
+    rgba(18, 21, 28, 0) 0%,
+    var(--bg-elev) 70%
+  );
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.panel.has-overflow:not(.at-bottom) .overflow-hint { opacity: 1; }
 .panel h2 {
   font-size: 11px;
   text-transform: uppercase;

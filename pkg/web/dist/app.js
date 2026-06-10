@@ -736,11 +736,57 @@ function setupFilters() {
   $("pod-filter").addEventListener("input", renderPods);
 }
 
+// ---------- scroll affordance ----------
+//
+// The lists hide their overflow behind a thin (auto-hiding on macOS)
+// scrollbar, so it wasn't obvious there were more items below the
+// fold. We tag the parent panel with .has-overflow / .at-bottom so
+// CSS can show a fade + ▾ at the bottom — and hide it once the user
+// has actually scrolled to the end.
+function updateOverflowHints() {
+  for (const list of document.querySelectorAll(".panel .list")) {
+    const panel = list.closest(".panel");
+    if (!panel) continue;
+    const overflow = list.scrollHeight - list.clientHeight > 1;
+    const atBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 2;
+    panel.classList.toggle("has-overflow", overflow);
+    panel.classList.toggle("at-bottom", !overflow || atBottom);
+  }
+}
+
+function setupOverflowHints() {
+  for (const panel of document.querySelectorAll(".panel")) {
+    if (!panel.querySelector(".overflow-hint")) {
+      const hint = document.createElement("div");
+      hint.className = "overflow-hint";
+      hint.innerHTML = "<span>▾</span>";
+      panel.appendChild(hint);
+    }
+    const list = panel.querySelector(".list");
+    if (list) {
+      list.addEventListener("scroll", updateOverflowHints, { passive: true });
+      // React to items being added/removed.
+      new MutationObserver(updateOverflowHints).observe(list, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+      });
+    }
+  }
+  // Panel-size changes (sidebar resize, font load, etc.) flip overflow on/off.
+  if (typeof ResizeObserver !== "undefined") {
+    const ro = new ResizeObserver(updateOverflowHints);
+    for (const panel of document.querySelectorAll(".panel")) ro.observe(panel);
+  }
+  updateOverflowHints();
+}
+
 // ---------- boot ----------
 async function init() {
   initTerminal();
   setStatus("idle", "Idle");
   setupFilters();
+  setupOverflowHints();
   $("inject-btn").addEventListener("click", injectDebugger);
   await loadConfig();
   await loadMe();
