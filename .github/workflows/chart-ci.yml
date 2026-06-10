@@ -1,0 +1,36 @@
+name: chart-ci
+
+on:
+  pull_request:
+    paths:
+      - 'helm-chart/porthole/**'
+      - 'docs/examples/**/values.yaml'
+      - '.github/workflows/chart-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'helm-chart/porthole/**'
+      - 'docs/examples/**/values.yaml'
+      - '.github/workflows/chart-ci.yml'
+
+jobs:
+  lint-and-template:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.0
+
+      - name: helm lint
+        run: helm lint helm-chart/porthole
+
+      - name: helm template — default values
+        run: helm template porthole helm-chart/porthole > /dev/null
+
+      - name: helm template — porthole example (no auth)
+        run: helm template porthole helm-chart/porthole -f docs/examples/porthole/values.yaml > /dev/null
+
+      - name: helm template — envoy-gateway example
+        run: helm template porthole helm-chart/porthole -f docs/examples/envoy-gateway/values.yaml > /dev/null

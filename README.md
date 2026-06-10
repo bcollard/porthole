@@ -27,6 +27,16 @@ kubectl -n porthole port-forward svc/porthole 8081:8081 &
 open http://localhost:8081/ui/
 ```
 
+The chart is also published to GHCR as an OCI artifact, so you don't
+need to clone the repo:
+
+```sh
+helm install porthole oci://ghcr.io/bcollard/charts/porthole \
+  --version 0.1.0 \
+  --namespace porthole --create-namespace \
+  --set auth.disabled=true
+```
+
 With `auth.disabled=true` in the example values, every request is
 stamped as the `local-dev` principal and OPA's default policy grants it
 admin. Drive the UI immediately: pick a namespace, pick a pod, click

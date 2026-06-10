@@ -16,3 +16,7 @@ keywords:
 maintainers:
   - name: bcollard
     url: https://github.com/bcollard
+annotations:
+  "org.opencontainers.image.source": "https://github.com/bcollard/porthole"
+  "org.opencontainers.image.description": "Web-based debug terminal for Kubernetes."
+  "org.opencontainers.image.licenses": "Apache-2.0"

@@ -1,0 +1,89 @@
+name: chart-release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'helm-chart/porthole/Chart.yaml'
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  CHART_DIR: helm-chart/porthole
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.0
+
+      - name: Read chart metadata
+        id: chart
+        run: |
+          NAME=$(grep '^name:' "$CHART_DIR/Chart.yaml" | awk '{print $2}' | tr -d '"')
+          VERSION=$(grep '^version:' "$CHART_DIR/Chart.yaml" | awk '{print $2}' | tr -d '"')
+          OWNER_LC=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "namespace=$OWNER_LC/charts" >> "$GITHUB_OUTPUT"
+          echo "Chart: $NAME-$VERSION → oci://$REGISTRY/$OWNER_LC/charts"
+
+      - name: Helm registry login
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login "$REGISTRY" -u "${{ github.actor }}" --password-stdin
+
+      - name: Check if version already published
+        id: check
+        run: |
+          if helm pull "oci://$REGISTRY/${{ steps.chart.outputs.namespace }}/${{ steps.chart.outputs.name }}" \
+              --version "${{ steps.chart.outputs.version }}" \
+              --destination /tmp/check 2>/dev/null; then
+            echo "Version ${{ steps.chart.outputs.version }} already published; skipping."
+            echo "should_publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Package
+        if: steps.check.outputs.should_publish == 'true'
+        run: |
+          mkdir -p /tmp/dist
+          helm package "$CHART_DIR" --destination /tmp/dist
+
+      - name: Push to GHCR
+        if: steps.check.outputs.should_publish == 'true'
+        run: |
+          helm push "/tmp/dist/${{ steps.chart.outputs.name }}-${{ steps.chart.outputs.version }}.tgz" \
+            "oci://$REGISTRY/${{ steps.chart.outputs.namespace }}"
+
+      - name: Set package visibility to public
+        if: steps.check.outputs.should_publish == 'true'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PKG=$(printf 'charts/%s' "${{ steps.chart.outputs.name }}" | sed 's|/|%2F|g')
+          curl -fsS -X PATCH \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/user/packages/container/$PKG/visibility" \
+            -d '{"visibility":"public"}' \
+            || echo "::warning::Could not flip visibility via API. Toggle once at https://github.com/users/${{ github.repository_owner }}/packages/container/${{ steps.chart.outputs.name }}/settings"
+
+      - name: Tag the release
+        if: steps.check.outputs.should_publish == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="chart-v${{ steps.chart.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "Helm chart $TAG"
+          git push origin "$TAG"
