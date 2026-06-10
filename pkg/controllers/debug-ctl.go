@@ -119,14 +119,30 @@ func respondECList(c *gin.Context, ns, pod string) {
 // must mirror the OIDC gateway's logoutPath (e.g. Envoy Gateway's
 // SecurityPolicy.oidc.logoutPath). The SPA prepends BASE_PATH to it
 // when building the Logout link.
+//
+// idpLogoutURL is the IdP's end-session endpoint. The SPA navigates
+// to it after clearing the gateway-side session cookie so the IdP
+// itself drops the SSO session (otherwise the user is silently
+// re-authenticated on the next request). When OIDC_LOGOUT_URL is
+// set it wins; otherwise we derive the Keycloak default
+// (<issuer>/protocol/openid-connect/logout). Empty when neither is
+// configured — the SPA then falls back to the single-step EG
+// cookie-clear, which is enough for AUTH_DISABLED-style flows.
 func GetConfig(c *gin.Context) {
 	logoutPath := os.Getenv("LOGOUT_PATH")
 	if logoutPath == "" {
 		logoutPath = "/logout"
 	}
+	idpLogoutURL := os.Getenv("OIDC_LOGOUT_URL")
+	if idpLogoutURL == "" {
+		if issuer := os.Getenv("OIDC_ISSUER"); issuer != "" {
+			idpLogoutURL = strings.TrimRight(issuer, "/") + "/protocol/openid-connect/logout"
+		}
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"defaultImage": defaultDebugImage,
 		"logoutPath":   logoutPath,
+		"idpLogoutURL": idpLogoutURL,
 	})
 }
 

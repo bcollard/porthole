@@ -94,6 +94,7 @@ func NewJWTMiddleware(cfg JWTConfig) (gin.HandlerFunc, error) {
 			Name:              str(claims["name"]),
 			GivenName:         str(claims["given_name"]),
 			FamilyName:        str(claims["family_name"]),
+			AuthorizedParty:   str(claims["azp"]),
 			Raw:               raw,
 		}
 		c.Set(principalKey, p)

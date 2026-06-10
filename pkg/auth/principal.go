@@ -17,6 +17,11 @@ type Principal struct {
 	Name              string   `json:"name,omitempty"`
 	GivenName         string   `json:"given_name,omitempty"`
 	FamilyName        string   `json:"family_name,omitempty"`
+	// AuthorizedParty mirrors the JWT `azp` claim — the OAuth
+	// client_id the token was issued to. The SPA needs it for
+	// RP-initiated logout (Keycloak's end_session endpoint accepts
+	// `client_id` to identify the caller).
+	AuthorizedParty string `json:"azp,omitempty"`
 	// Raw is the original token. We keep it for debugging; it's never
 	// passed downstream (in particular, NOT sent to OPA).
 	Raw string `json:"-"`

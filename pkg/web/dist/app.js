@@ -163,6 +163,7 @@ async function loadMe() {
   const logoutEl = $("user-logout");
   try {
     const me = await http("/api/me");
+    state.me = me;
     nameEl.textContent = displayName(me);
     nameEl.title = me.email || me.sub || "";
     // AUTH_DISABLED stamps a fixed local-dev principal; there's no
@@ -171,7 +172,11 @@ async function loadMe() {
       logoutEl.hidden = true;
     } else {
       const suffix = (state.config && state.config.logoutPath) || "/logout";
+      // href stays as a fallback target for "Open in new tab"
+      // and for keyboard navigation. The click handler wires the
+      // real two-step flow.
       logoutEl.href = BASE_PATH + suffix;
+      logoutEl.addEventListener("click", doLogout);
     }
     userEl.hidden = false;
   } catch (e) {
@@ -179,6 +184,51 @@ async function loadMe() {
     // user widget — the rest of the UI degrades cleanly.
     console.warn("loadMe:", e.message);
   }
+}
+
+// Two-step logout:
+//
+//   1. GET the gateway's logoutPath. EG's OIDC filter drops its
+//      session cookie there but otherwise does nothing.
+//   2. Navigate to the IdP's end-session endpoint with client_id
+//      (from the JWT's azp claim) and post_logout_redirect_uri
+//      pointing back at the SPA root. The IdP invalidates its SSO
+//      session and redirects the browser back; EG then sees no
+//      cookie and re-runs the OIDC handshake against a now-empty
+//      IdP session, so the user gets a fresh login prompt instead
+//      of being silently signed back in.
+//
+// Falls back to the single-step gateway-cookie clear when we don't
+// know the IdP logout URL (server hasn't been configured, or
+// AUTH_DISABLED-style local dev).
+async function doLogout(e) {
+  e.preventDefault();
+  const cfg = state.config || {};
+  const me = state.me || {};
+  const logoutPath = cfg.logoutPath || "/logout";
+  const idpLogout = cfg.idpLogoutURL;
+
+  // 1. Drop EG's session cookie. credentials:"same-origin" is the
+  // default for fetch; the cookie is sent, the response is dropped.
+  try {
+    await fetch(BASE_PATH + logoutPath, { credentials: "same-origin" });
+  } catch (err) {
+    console.warn("gateway logout fetch failed:", err);
+  }
+
+  // 2. Redirect to the IdP for the SSO-session invalidation.
+  if (idpLogout && me.azp) {
+    const postLogout = `${window.location.origin}${BASE_PATH}/`;
+    const url =
+      idpLogout +
+      "?client_id=" + encodeURIComponent(me.azp) +
+      "&post_logout_redirect_uri=" + encodeURIComponent(postLogout);
+    window.location.href = url;
+    return;
+  }
+  // Fallback: at least the local session is gone. Reload so the
+  // gateway re-prompts (and the SPA reflects the new state).
+  window.location.href = BASE_PATH + "/";
 }
 
 async function loadNamespaces() {
