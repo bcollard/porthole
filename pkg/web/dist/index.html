@@ -32,6 +32,13 @@
 
 <main>
   <aside class="sidebar">
+    <div class="instructions" id="instructions" aria-label="Workflow">
+      <ol>
+        <li id="step-1">Select a namespace</li>
+        <li id="step-2">Select a pod</li>
+      </ol>
+      <p id="step-3" class="instructions-final">Then inject an ephemeral container for debugging</p>
+    </div>
     <div class="panel">
       <h2>Namespaces</h2>
       <input type="search" id="ns-filter" placeholder="Filter namespaces…" autocomplete="off">

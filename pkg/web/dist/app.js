@@ -591,6 +591,7 @@ function selectNamespace(ns) {
   renderECBar();
   updateTargetText();
   renderTargetLabels();
+  updateInstructions();
   loadPods(ns);
   loadServices(ns);
 }
@@ -607,6 +608,7 @@ function selectPod(pod) {
   renderECBar();
   updateTargetText();
   renderTargetLabels();
+  updateInstructions();
   loadEphemeralContainers(state.selectedNs, pod);
   loadPodDetail(state.selectedNs, pod);
 }
@@ -736,6 +738,27 @@ function setupFilters() {
   $("pod-filter").addEventListener("input", renderPods);
 }
 
+// ---------- workflow instructions ----------
+//
+// Three little steps at the top of the sidebar. Classes flow with
+// the current selection so the strip doubles as a progress indicator:
+//   step-1 → done as soon as a namespace is selected
+//   step-2 → done as soon as a pod is selected; current after step-1
+//   step-3 → current once both are picked (the next click is +Debugger)
+function updateInstructions() {
+  const s1 = $("step-1");
+  const s2 = $("step-2");
+  const s3 = $("step-3");
+  if (!s1 || !s2 || !s3) return;
+  const ns = !!state.selectedNs;
+  const pod = !!state.selectedPod;
+  s1.classList.toggle("done", ns);
+  s1.classList.toggle("current", !ns);
+  s2.classList.toggle("done", pod);
+  s2.classList.toggle("current", ns && !pod);
+  s3.classList.toggle("current", ns && pod);
+}
+
 // ---------- scroll affordance ----------
 //
 // The lists hide their overflow behind a thin (auto-hiding on macOS)
@@ -787,6 +810,7 @@ async function init() {
   setStatus("idle", "Idle");
   setupFilters();
   setupOverflowHints();
+  updateInstructions();
   $("inject-btn").addEventListener("click", injectDebugger);
   await loadConfig();
   await loadMe();
