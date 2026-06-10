@@ -264,80 +264,131 @@ function renderECBar() {
   // Ephemeral containers are immutable in the pod spec — k8s won't
   // let us remove them — so a terminated EC lingers forever. Hide
   // them: most users only want to see what's still alive.
+  // `pendingTerminate` is a client-only flag we set while a kill is
+  // in flight; the pill stays visible (with a spinner) until the
+  // next server reload either flips Terminated=true or omits it.
   const visible = state.ecs.filter((ec) => !ec.Terminated);
-  if (visible.length === 0) {
-    bar.innerHTML = `<span class="ec-empty">No ephemeral containers. Inject one →</span>`;
-    return;
-  }
+
   bar.innerHTML = "";
-  for (const ec of visible) {
-    const chip = document.createElement("button");
-    chip.className = "ec-chip";
-    if (ec.Running) chip.classList.add("running");
-    if (ec.Name === state.selectedEc) chip.classList.add("active");
-    chip.title = ec.Running ? "Click to attach" : "Container is not running";
-    chip.innerHTML =
-      `<span class="ec-dot"></span>` +
-      `<span class="ec-label">${escapeHtml(ec.Name)}</span>`;
-    if (ec.Running) {
-      chip.addEventListener("click", () => attachToEc(ec.Name));
-      // Per-EC × — only on porthole-* (the only ones we'll terminate
-      // server-side; the rest are someone else's debug sessions and
-      // we leave them alone).
-      if (ec.Name.startsWith("porthole-")) {
-        const x = document.createElement("span");
-        x.className = "ec-close";
-        x.setAttribute("role", "button");
-        x.setAttribute("aria-label", "Terminate this ephemeral container");
-        x.title = "Terminate this ephemeral container";
-        x.textContent = "×";
-        x.addEventListener("click", (e) => {
-          e.stopPropagation();
-          terminateOneEC(ec.Name, x);
-        });
-        chip.appendChild(x);
-      }
-    } else {
-      chip.disabled = true;
-    }
-    bar.appendChild(chip);
+  if (visible.length === 0) {
+    bar.appendChild(makeEmptyMessage());
+  } else {
+    for (const ec of visible) bar.appendChild(makeChip(ec));
   }
 
-  // "Clean up all" only when there's at least one porthole-* running EC.
+  // Right-aligned action group: refresh + (when applicable) cleanup.
+  const actions = document.createElement("div");
+  actions.className = "ec-actions";
+
+  const refresh = document.createElement("button");
+  refresh.className = "ec-action ec-refresh";
+  refresh.title = "Refresh the ephemeral-container list";
+  refresh.setAttribute("aria-label", "Refresh");
+  refresh.innerHTML = `<span class="ec-refresh-icon">↻</span>`;
+  refresh.addEventListener("click", () => refreshECs(refresh));
+  actions.appendChild(refresh);
+
   const cleanable = visible.some(
-    (e) => e.Running && e.Name.startsWith("porthole-"),
+    (e) => e.Running && !e.pendingTerminate && e.Name.startsWith("porthole-"),
   );
   if (cleanable) {
     const btn = document.createElement("button");
     btn.id = "cleanup-all-btn";
-    btn.className = "ec-cleanup";
+    btn.className = "ec-action ec-cleanup";
     btn.title = "Terminate every porthole-injected ephemeral container in this pod";
     btn.textContent = "Clean up all";
     btn.addEventListener("click", () => cleanupPod(btn));
-    bar.appendChild(btn);
+    actions.appendChild(btn);
+  }
+  bar.appendChild(actions);
+}
+
+function makeEmptyMessage() {
+  const el = document.createElement("span");
+  el.className = "ec-empty";
+  el.textContent = "No ephemeral containers. Inject one →";
+  return el;
+}
+
+function makeChip(ec) {
+  const chip = document.createElement("button");
+  chip.className = "ec-chip";
+  if (ec.Running) chip.classList.add("running");
+  if (ec.pendingTerminate) chip.classList.add("terminating");
+  if (ec.Name === state.selectedEc) chip.classList.add("active");
+  chip.title = ec.pendingTerminate
+    ? "Terminating…"
+    : ec.Running
+      ? "Click to attach"
+      : "Container is not running";
+  chip.innerHTML =
+    `<span class="ec-dot"></span>` +
+    `<span class="ec-label">${escapeHtml(ec.Name)}</span>`;
+
+  if (ec.pendingTerminate) {
+    // Replace the × with an inline spinner; chip is non-interactive
+    // until the next reload confirms the termination.
+    const sp = document.createElement("span");
+    sp.className = "spinner ec-chip-spinner";
+    chip.appendChild(sp);
+    chip.disabled = true;
+    return chip;
+  }
+  if (!ec.Running) {
+    chip.disabled = true;
+    return chip;
+  }
+
+  chip.addEventListener("click", () => attachToEc(ec.Name));
+  // Per-EC × — only on porthole-* (the only names the server will
+  // accept for the single-EC terminate endpoint).
+  if (ec.Name.startsWith("porthole-")) {
+    const x = document.createElement("span");
+    x.className = "ec-close";
+    x.setAttribute("role", "button");
+    x.setAttribute("aria-label", "Terminate this ephemeral container");
+    x.title = "Terminate this ephemeral container";
+    x.textContent = "×";
+    x.addEventListener("click", (e) => {
+      e.stopPropagation();
+      terminateOneEC(ec.Name);
+    });
+    chip.appendChild(x);
+  }
+  return chip;
+}
+
+async function refreshECs(btn) {
+  if (!state.selectedNs || !state.selectedPod) return;
+  if (btn) btn.classList.add("busy");
+  try {
+    await loadEphemeralContainers(state.selectedNs, state.selectedPod);
+  } finally {
+    if (btn) btn.classList.remove("busy");
   }
 }
 
-async function terminateOneEC(ecName, xEl) {
+async function terminateOneEC(ecName) {
   const ns = state.selectedNs;
   const pod = state.selectedPod;
-  // Swap × → spinner so the user sees the click registered.
-  xEl.classList.add("busy");
-  xEl.textContent = "";
+  const ec = state.ecs.find((e) => e.Name === ecName);
+  if (!ec) return;
+
+  // Flip into the in-flight state — chip re-renders with a spinner
+  // and stays visible until the server reload removes it for real.
+  ec.pendingTerminate = true;
+  if (state.selectedEc === ecName) closeWebsocket();
+  renderECBar();
+
   try {
     await http(
       `/debug/cleanup/${encodeURIComponent(ns)}/${encodeURIComponent(pod)}/${encodeURIComponent(ecName)}`,
       { method: "POST" },
     );
-    if (state.selectedEc === ecName) closeWebsocket();
-    // Optimistic remove + verify via reload (kubelet's status flip
-    // can lag a beat behind our kill).
-    state.ecs = state.ecs.filter((e) => e.Name !== ecName);
-    renderECBar();
     await loadEphemeralContainers(ns, pod);
   } catch (e) {
-    xEl.classList.remove("busy");
-    xEl.textContent = "×";
+    ec.pendingTerminate = false;
+    renderECBar();
     toast("Terminate failed: " + e.message, "error");
   }
 }
@@ -347,11 +398,21 @@ async function cleanupPod(btn) {
   const ns = state.selectedNs;
   const pod = state.selectedPod;
   closeWebsocket();
+
+  // Mark every porthole-* running EC pending, so each pill shows a
+  // spinner alongside the button-level "Cleaning up…" indicator.
+  for (const ec of state.ecs) {
+    if (ec.Running && ec.Name.startsWith("porthole-")) {
+      ec.pendingTerminate = true;
+    }
+  }
   if (btn) {
     btn.disabled = true;
     btn.classList.add("busy");
     btn.innerHTML = `<span class="spinner"></span><span>Cleaning up…</span>`;
   }
+  renderECBar();
+
   try {
     const res = await http(
       `/debug/cleanup/${encodeURIComponent(ns)}/${encodeURIComponent(pod)}`,
@@ -359,13 +420,8 @@ async function cleanupPod(btn) {
     );
     const ok = (res.results || []).filter((r) => r.ok).length;
     toast(`Terminated ${ok} ephemeral container${ok === 1 ? "" : "s"}`, "success");
-    // Optimistic clear of porthole-* running ECs (Terminated ones
-    // are filtered in renderECBar anyway).
-    state.ecs = state.ecs.filter(
-      (e) => !(e.Running && e.Name.startsWith("porthole-")),
-    );
-    renderECBar();
   } catch (e) {
+    for (const ec of state.ecs) ec.pendingTerminate = false;
     toast("Cleanup failed: " + e.message, "error");
   } finally {
     await loadEphemeralContainers(ns, pod);

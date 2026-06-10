@@ -357,8 +357,23 @@ button:disabled {
   box-shadow: 0 0 4px var(--green);
 }
 .ec-chip.active .ec-dot { background: #0b0d12; box-shadow: none; }
-.ec-cleanup {
+.ec-chip.terminating {
+  opacity: 0.55;
+  cursor: progress;
+  pointer-events: none;
+}
+.ec-chip-spinner {
+  margin-left: 4px;
+  color: var(--red, #f87171);
+}
+/* Right-aligned button cluster: refresh + (optional) cleanup */
+.ec-actions {
   margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.ec-action {
   background: transparent;
   border: 1px solid var(--border);
   border-radius: 999px;
@@ -368,18 +383,32 @@ button:disabled {
   color: var(--text-dim);
   cursor: pointer;
   transition: all 0.12s;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.ec-refresh {
+  /* Tighter padding for the icon-only button */
+  padding: 4px 9px;
+  font-size: 14px;
+  line-height: 1;
+}
+.ec-refresh:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.ec-refresh.busy .ec-refresh-icon {
+  display: inline-block;
+  animation: spin 0.7s linear infinite;
 }
 .ec-cleanup:hover {
   border-color: var(--red, #f87171);
   color: var(--red, #f87171);
 }
-.ec-cleanup.busy,
-.ec-cleanup[disabled] {
+.ec-action.busy,
+.ec-action[disabled] {
   cursor: progress;
   opacity: 0.7;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
 }
 
 /* Per-pill close (×) button — inline at the right of each running EC */
