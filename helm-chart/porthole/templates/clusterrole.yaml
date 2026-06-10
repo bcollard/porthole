@@ -12,6 +12,11 @@ rules:
   - apiGroups: [""]
     resources: ["namespaces"]
     verbs: ["get", "list", "watch"]
+  # Surface neighbour services in the SPA's "Service Viewer" panel
+  # so operators can pick something to curl from a debug container.
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list", "watch"]
   - apiGroups: [""]
     resources: ["pods/exec", "pods/attach"]
     verbs: ["create"]

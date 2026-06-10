@@ -266,6 +266,58 @@ async function loadEphemeralContainers(ns, pod) {
   }
 }
 
+async function loadServices(ns) {
+  const ul = $("svc-list");
+  ul.innerHTML = `<li class="empty">Loading…</li>`;
+  try {
+    const r = await http(`/explore/ns/${encodeURIComponent(ns)}/svc`);
+    state.services = r.services || [];
+    renderServices();
+  } catch (e) {
+    state.services = [];
+    ul.innerHTML = `<li class="empty">Error: ${escapeHtml(e.message)}</li>`;
+  }
+}
+
+function renderServices() {
+  const ul = $("svc-list");
+  ul.innerHTML = "";
+  if (!state.selectedNs) {
+    ul.innerHTML = `<li class="empty">Select a namespace.</li>`;
+    return;
+  }
+  if (!state.services || state.services.length === 0) {
+    ul.innerHTML = `<li class="empty">No services in this namespace.</li>`;
+    return;
+  }
+  for (const s of state.services) {
+    const li = document.createElement("li");
+    li.className = "svc-item";
+    const portList = (s.ports || [])
+      .map((p) => (p.name ? `${escapeHtml(p.name)}:${p.port}` : String(p.port)))
+      .join(", ");
+    li.innerHTML =
+      `<span class="svc-name">${escapeHtml(s.name)}</span>` +
+      `<span class="svc-ports">${portList || "<no ports>"}</span>`;
+    // Click to copy a curl line a debug container can paste verbatim.
+    // Inside the same ns, the short DNS name (svc:port) is enough.
+    li.title = "Click to copy a curl command";
+    li.addEventListener("click", () => copyCurlForService(s));
+    ul.appendChild(li);
+  }
+}
+
+function copyCurlForService(svc) {
+  if (!svc.ports || svc.ports.length === 0) return;
+  const p = svc.ports[0];
+  const scheme = p.name === "https" || p.port === 443 ? "https" : "http";
+  const cmd = `curl ${scheme}://${svc.name}:${p.port}/`;
+  navigator.clipboard.writeText(cmd).then(
+    () => toast(`Copied: ${cmd}`, "success"),
+    () => toast(`Couldn't copy — manual: ${cmd}`, "error"),
+  );
+}
+
 async function loadPodDetail(ns, pod) {
   // Best-effort — failure just leaves the labels strip empty.
   try {
@@ -527,16 +579,20 @@ function selectNamespace(ns) {
   state.selectedEc = null;
   state.pods = [];
   state.ecs = [];
+  state.services = [];
   state.podDetail = null;
   $("ns-current").textContent = ns;
+  $("ns-current-svc").textContent = ns;
   $("inject-btn").disabled = true;
   closeWebsocket();
   renderNamespaces();
   renderPods();
+  renderServices();
   renderECBar();
   updateTargetText();
   renderTargetLabels();
   loadPods(ns);
+  loadServices(ns);
 }
 
 function selectPod(pod) {
