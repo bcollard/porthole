@@ -311,7 +311,12 @@ function copyCurlForService(svc) {
   if (!svc.ports || svc.ports.length === 0) return;
   const p = svc.ports[0];
   const scheme = p.name === "https" || p.port === 443 ? "https" : "http";
-  const cmd = `curl ${scheme}://${svc.name}:${p.port}/`;
+  // Cross-namespace short form (<svc>.<ns>:port). Works from any pod
+  // in the cluster — including a debug container the operator just
+  // injected somewhere else.
+  const ns = state.selectedNs;
+  const host = ns ? `${svc.name}.${ns}` : svc.name;
+  const cmd = `curl ${scheme}://${host}:${p.port}/`;
   navigator.clipboard.writeText(cmd).then(
     () => toast(`Copied: ${cmd}`, "success"),
     () => toast(`Couldn't copy — manual: ${cmd}`, "error"),
