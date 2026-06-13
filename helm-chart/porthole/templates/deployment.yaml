@@ -50,6 +50,14 @@ spec:
             - name: OIDC_AUDIENCE
               value: {{ .Values.auth.audience | quote }}
             {{- end }}
+            {{- if .Values.auth.idTokenHeader }}
+            - name: ID_TOKEN_HEADER
+              value: {{ .Values.auth.idTokenHeader | quote }}
+            {{- end }}
+            {{- if .Values.auth.idTokenHeaderPrefix }}
+            - name: ID_TOKEN_HEADER_PREFIX
+              value: {{ .Values.auth.idTokenHeaderPrefix | quote }}
+            {{- end }}
             {{- if .Values.opa.enabled }}
             - name: OPA_URL
               value: {{ .Values.opa.url | quote }}

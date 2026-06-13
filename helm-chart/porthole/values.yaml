@@ -34,6 +34,17 @@ auth:
   jwksURL: ""
   issuer: ""
   audience: ""
+  # idTokenHeader: which request header carries the id_token. Empty
+  # defaults to "X-ID-Token" (Envoy Gateway's forwardIDToken). Set to
+  # "Authorization" if the gateway forwards the token under the
+  # canonical OAuth header instead — in which case pair it with
+  # idTokenHeaderPrefix: "Bearer ".
+  #
+  # The canonical `Authorization: Bearer <token>` shape is *always*
+  # accepted as a fallback, so an operator who hasn't configured a
+  # custom forwardIDToken doesn't need to touch these fields.
+  idTokenHeader: ""
+  idTokenHeaderPrefix: ""
 
 # CSWSH defence — comma-separated list of Origins accepted for the
 # /term WebSocket upgrade. Leave empty in same-origin deployments;

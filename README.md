@@ -132,17 +132,29 @@ Three diagrams, each at a different zoom level:
 
 Porthole validates a JWT on every request. The token can come from:
 
-- `X-ID-Token` header (preferred — set by an upstream API gateway after
-  OIDC login)
-- `Authorization: Bearer <token>` (fallback — works with the
-  `forwardAccessToken` Envoy Gateway setting)
+- The configured **id_token header** (default `X-ID-Token` — set by an
+  upstream API gateway after OIDC login). Operators who terminate
+  OIDC elsewhere can point this at any header the gateway writes,
+  e.g. `Authorization` or `X-Forwarded-Access-Token`.
+- `Authorization: Bearer <token>` (canonical OAuth fallback — always
+  accepted, works with Envoy Gateway's `forwardAccessToken` setting
+  with no extra config).
 
-| Env var          | Example |
-|------------------|---------|
-| `JWKS_URL`       | `http://keycloak/realms/porthole/protocol/openid-connect/certs` |
-| `OIDC_ISSUER`    | `http://keycloak/realms/porthole` |
-| `OIDC_AUDIENCE`  | _(optional)_ expected `aud` claim |
-| `AUTH_DISABLED`  | `true` to bypass JWT validation (local dev only) |
+| Env var                  | Example |
+|--------------------------|---------|
+| `JWKS_URL`               | `http://keycloak/realms/porthole/protocol/openid-connect/certs` |
+| `OIDC_ISSUER`            | `http://keycloak/realms/porthole` |
+| `OIDC_AUDIENCE`          | _(optional)_ expected `aud` claim |
+| `ID_TOKEN_HEADER`        | _(optional, default `X-ID-Token`)_ header the gateway writes the id_token to |
+| `ID_TOKEN_HEADER_PREFIX` | _(optional)_ prefix to trim from that header — e.g. `Bearer ` when `ID_TOKEN_HEADER=Authorization` |
+| `AUTH_DISABLED`          | `true` to bypass JWT validation (local dev only) |
+
+Chart values: `auth.idTokenHeader` and `auth.idTokenHeaderPrefix`.
+
+If the configured header is present but its value doesn't carry the
+configured prefix, the value is ignored and the `Authorization: Bearer`
+fallback is tried — so a misconfigured prefix can't silently feed garbage
+to the JWT parser.
 
 The middleware uses the `keyfunc/v3` library, which pins each token to
 the algorithm declared in the JWKS — `alg:none` and HMAC-with-RSA-key
@@ -277,6 +289,8 @@ attach lands here as `outcome:"denied"` with the OPA reason.
 | `JWKS_URL`            | _(required)_             | IdP JWKS endpoint, used to validate inbound JWTs. |
 | `OIDC_ISSUER`         | _(optional)_             | Expected `iss` claim. Empty disables the check. |
 | `OIDC_AUDIENCE`       | _(optional)_             | Expected `aud` claim. Empty disables the check. |
+| `ID_TOKEN_HEADER`     | `X-ID-Token`             | Request header read first for the id_token. Set to `Authorization` (with `ID_TOKEN_HEADER_PREFIX=Bearer `) when the gateway forwards under the canonical OAuth header. |
+| `ID_TOKEN_HEADER_PREFIX` | _(unset)_             | Prefix to trim from `ID_TOKEN_HEADER`'s value. If the header is present but doesn't carry this prefix, the canonical `Authorization: Bearer` fallback is tried. |
 | `OPA_URL`             | _(unset → OPA disabled)_ | OPA decision endpoint, e.g. `http://localhost:8181/v1/data/porthole/authz/decision`. |
 | `WS_ALLOWED_ORIGINS`  | _(unset → same-origin)_ | Comma-separated allowlist of `Origin` headers accepted for WS upgrades. Defends against CSWSH. |
 | `EC_SWEEP_TTL`        | _(unset → disabled)_     | Auto-terminate porthole-injected ECs older than this duration (e.g. `30m`). |

@@ -63,10 +63,17 @@ func router(jwtMW gin.HandlerFunc) http.Handler {
 }
 
 func corsMiddleware() gin.HandlerFunc {
+	// Allow the canonical pair plus the operator-configured id_token
+	// header, so an SPA that sets the header itself (rather than
+	// relying on the gateway to inject it) survives the preflight.
+	headers := "Content-Type, Authorization, X-ID-Token"
+	if h := os.Getenv("ID_TOKEN_HEADER"); h != "" && h != "Authorization" && h != "X-ID-Token" {
+		headers += ", " + h
+	}
 	return func(c *gin.Context) {
 		c.Header("Access-Control-Allow-Origin", "*")
 		c.Header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-ID-Token")
+		c.Header("Access-Control-Allow-Headers", headers)
 		if c.Request.Method == http.MethodOptions {
 			c.AbortWithStatus(http.StatusNoContent)
 			return
@@ -79,9 +86,11 @@ func main() {
 	setLogging()
 
 	jwtMW, err := auth.NewJWTMiddleware(auth.JWTConfig{
-		JWKSURL:  os.Getenv("JWKS_URL"),
-		Issuer:   os.Getenv("OIDC_ISSUER"),
-		Audience: os.Getenv("OIDC_AUDIENCE"),
+		JWKSURL:             os.Getenv("JWKS_URL"),
+		Issuer:              os.Getenv("OIDC_ISSUER"),
+		Audience:            os.Getenv("OIDC_AUDIENCE"),
+		IDTokenHeader:       os.Getenv("ID_TOKEN_HEADER"),
+		IDTokenHeaderPrefix: os.Getenv("ID_TOKEN_HEADER_PREFIX"),
 	})
 	if err != nil {
 		log.Fatalf("auth init: %v", err)
