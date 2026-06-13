@@ -21,13 +21,6 @@ type InjectPayload struct {
 
 const defaultDebugImage = "nicolaka/netshoot"
 
-// authDenyError lets the audit logger record an authZ deny as a real
-// error without mixing in the rest of the kube-error string matching.
-type authDenyError struct{ reason string }
-
-func (e *authDenyError) Error() string { return "denied: " + e.reason }
-func authDeny(reason string) error     { return &authDenyError{reason: reason} }
-
 func Inject(c *gin.Context) {
 	start := time.Now()
 	var payload InjectPayload
@@ -41,8 +34,7 @@ func Inject(c *gin.Context) {
 	}
 
 	if decision := auth.Authorize(c, auth.ActionInjectEC, payload.Namespace, payload.Pod); !decision.Allow {
-		denyErr := authDeny(decision.Reason)
-		audit.LogInject(c, start, payload.Namespace, payload.Pod, payload.Image, "", denyErr)
+		audit.LogInjectDeny(c, start, payload.Namespace, payload.Pod, payload.Image, decision.Reason)
 		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden", "reason": decision.Reason})
 		return
 	}
@@ -155,7 +147,7 @@ func CleanupOne(c *gin.Context) {
 	pod := c.Param("pod")
 	ec := c.Param("ec")
 	if !auth.AuthorizeOrAbort(c, auth.ActionTerminateEC, ns, pod) {
-		audit.LogCleanup(c, start, ns, pod, map[string]string{"ec": ec}, authDeny("authz"))
+		audit.LogCleanupDeny(c, start, ns, pod, map[string]string{"ec": ec}, "authz")
 		return
 	}
 	if err := ephemeral.TerminateByName(c, ns, pod, ec); err != nil {
@@ -186,7 +178,7 @@ func Cleanup(c *gin.Context) {
 	ns := c.Param("ns")
 	pod := c.Param("pod")
 	if !auth.AuthorizeOrAbort(c, auth.ActionTerminateEC, ns, pod) {
-		audit.LogCleanup(c, start, ns, pod, nil, authDeny("authz"))
+		audit.LogCleanupDeny(c, start, ns, pod, nil, "authz")
 		return
 	}
 	results, err := ephemeral.Cleanup(c, ns, pod)
