@@ -73,6 +73,13 @@ opa:
 
     default decision := {"allow": false, "reason": "default deny"}
 
+    # effective_bindings: every binding matching one of the user's
+    # groups. The SPA reads this via /api/me to render role chips.
+    effective_bindings := [b |
+      some b in data.policy.bindings
+      b.group in input.user.groups
+    ]
+
     # Collect every matching binding via an array comprehension so the
     # complete `decision` rule has a single deterministic output even
     # when several bindings grant the same request (e.g. team-a is both

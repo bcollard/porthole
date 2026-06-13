@@ -34,16 +34,31 @@ func GetNamespaces(c *gin.Context) {
 }
 
 // GetMe returns the validated Principal the JWT middleware stamped
-// onto the context. The SPA uses it to render the connected user in
-// the topbar. Mounted under the protected route group so the JWT has
-// already been parsed by the time we reach this handler.
+// onto the context, plus the OPA bindings that match the user's
+// groups. The SPA uses it to render the connected user *and* their
+// role chips in the topbar. Mounted under the protected route group
+// so the JWT has already been parsed by the time we reach this
+// handler. `bindings` is omitted when OPA is disabled or unreachable.
 func GetMe(c *gin.Context) {
 	p, ok := auth.PrincipalFromContext(c)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "no principal"})
 		return
 	}
-	c.JSON(http.StatusOK, p)
+	out := gin.H{
+		"sub":                p.Sub,
+		"email":              p.Email,
+		"groups":             p.Groups,
+		"preferred_username": p.PreferredUsername,
+		"name":               p.Name,
+		"given_name":         p.GivenName,
+		"family_name":        p.FamilyName,
+		"azp":                p.AuthorizedParty,
+	}
+	if bindings := auth.EffectiveBindings(c); bindings != nil {
+		out["bindings"] = bindings
+	}
+	c.JSON(http.StatusOK, out)
 }
 
 func GetPods(c *gin.Context) {

@@ -139,6 +139,43 @@ body {
   border-color: var(--red);
 }
 
+/* Role chips — one per OPA binding that matches the user's groups.
+ * Color codes the privilege axis (viewer < debugger < admin) so a
+ * logged-in user can see at a glance what they're allowed to do.
+ * `.user-roles` collapses to nothing when the user has no bindings or
+ * OPA is unreachable. */
+.user-roles {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.user-roles[hidden] { display: none; }
+.user-role {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  cursor: default;
+  white-space: nowrap;
+}
+.user-role.role-viewer {
+  color: var(--text-muted);
+  border-color: var(--border-strong);
+}
+.user-role.role-debugger {
+  color: var(--accent-strong);
+  border-color: var(--accent);
+  background: var(--accent-glow);
+}
+.user-role.role-admin {
+  color: var(--amber);
+  border-color: var(--amber);
+}
+
 /* ---------- layout ---------- */
 main {
   flex: 1;

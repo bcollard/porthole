@@ -26,6 +26,20 @@ import future.keywords.in
 
 default decision := {"allow": false, "reason": "default deny"}
 
+# effective_bindings returns every binding whose `group` matches one
+# of the user's groups, regardless of action/namespace. The SPA reads
+# this via /api/me to render the user's role chips in the topbar so a
+# logged-in user can see what they're actually allowed to do *before*
+# clicking something that gets denied.
+#
+# Intentionally action-agnostic — listing matched bindings is closer to
+# how an operator thinks ("I'm `debugger on team-a-*`") than streaming
+# a per-action allow list.
+effective_bindings := [b |
+	some b in data.policy.bindings
+	b.group in input.user.groups
+]
+
 # Collect every matching binding via an array comprehension so the
 # complete `decision` rule has a single deterministic output even when
 # several bindings grant the same request (e.g. team-a is both

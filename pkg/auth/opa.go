@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -125,6 +126,63 @@ func Authorize(c *gin.Context, action, namespace, pod string) Decision {
 		return Decision{Allow: false, Reason: "opa response unparseable: " + err.Error()}
 	}
 	return Decision{Allow: out.Result.Allow, Reason: out.Result.Reason}
+}
+
+// Binding mirrors one entry from data.policy.bindings. Returned to
+// the SPA via /api/me so the topbar can render the user's role chips.
+type Binding struct {
+	Group           string            `json:"group"`
+	Role            string            `json:"role"`
+	NamespaceGlob   string            `json:"namespace_glob,omitempty"`
+	NamespaceLabels map[string]string `json:"namespace_labels,omitempty"`
+	BusinessHours   bool              `json:"business_hours,omitempty"`
+}
+
+// EffectiveBindings returns the bindings whose `group` matches one of
+// the user's groups. Used by /api/me to surface the user's role(s) in
+// the UI. Returns nil when OPA is disabled, the principal is missing,
+// or OPA is unreachable — the UI degrades by not rendering chips.
+//
+// The bindings endpoint URL is derived from OPA_URL by replacing the
+// trailing `/decision` segment with `/effective_bindings`. Operators
+// pointing OPA_URL at a custom rule name should keep the convention.
+func EffectiveBindings(c *gin.Context) []Binding {
+	o := getOPA()
+	if o.url == "" {
+		return nil
+	}
+	p, _ := PrincipalFromContext(c)
+	if p == nil {
+		return nil
+	}
+	body, _ := json.Marshal(map[string]any{
+		"input": map[string]any{
+			"user": opaUser{Sub: p.Sub, Email: p.Email, Groups: p.Groups},
+		},
+	})
+
+	url := strings.TrimSuffix(o.url, "/decision") + "/effective_bindings"
+	req, err := http.NewRequestWithContext(c, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return nil
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := o.client.Do(req)
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil
+	}
+	var out struct {
+		Result []Binding `json:"result"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil
+	}
+	return out.Result
 }
 
 // AuthorizeOrAbort is the helper handlers should call after parsing

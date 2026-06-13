@@ -157,6 +157,56 @@ function displayName(p) {
   );
 }
 
+// Format one OPA binding as the text of a role chip — "role: scope".
+// Scope is the namespace_glob, the label set, or "*" for cluster-wide.
+// Business-hours bindings get a clock affordance.
+function bindingChipText(b) {
+  const parts = [];
+  if (b.namespace_glob) parts.push(b.namespace_glob);
+  if (b.namespace_labels) {
+    parts.push(
+      Object.entries(b.namespace_labels)
+        .map(([k, v]) => `${k}=${v}`)
+        .join(","),
+    );
+  }
+  if (parts.length === 0) parts.push("*");
+  const scope = parts.join(" + ");
+  const clock = b.business_hours ? " ⏰" : "";
+  return `${b.role}: ${scope}${clock}`;
+}
+
+function bindingChipTooltip(b) {
+  const lines = [`group: ${b.group}`, `role:  ${b.role}`];
+  if (b.namespace_glob) lines.push(`scope: namespace ~ ${b.namespace_glob}`);
+  if (b.namespace_labels) {
+    lines.push(
+      `scope: labels ${Object.entries(b.namespace_labels)
+        .map(([k, v]) => `${k}=${v}`)
+        .join(", ")}`,
+    );
+  }
+  if (b.business_hours) lines.push("business hours only (09:00-17:00 UTC, Mon-Fri)");
+  return lines.join("\n");
+}
+
+function renderRoleChips(bindings) {
+  const wrap = $("user-roles");
+  wrap.innerHTML = "";
+  if (!bindings || bindings.length === 0) {
+    wrap.hidden = true;
+    return;
+  }
+  for (const b of bindings) {
+    const chip = document.createElement("span");
+    chip.className = `user-role role-${escapeHtml(b.role || "unknown")}`;
+    chip.textContent = bindingChipText(b);
+    chip.title = bindingChipTooltip(b);
+    wrap.appendChild(chip);
+  }
+  wrap.hidden = false;
+}
+
 async function loadMe() {
   const userEl = $("user");
   const nameEl = $("user-name");
@@ -166,6 +216,7 @@ async function loadMe() {
     state.me = me;
     nameEl.textContent = displayName(me);
     nameEl.title = me.email || me.sub || "";
+    renderRoleChips(me.bindings);
     // AUTH_DISABLED stamps a fixed local-dev principal; there's no
     // OIDC layer to log out from, so hide the link.
     if (me.sub === "local-dev") {
