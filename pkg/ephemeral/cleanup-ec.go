@@ -90,9 +90,26 @@ func cleanupWithClient(ctx context.Context, client kubernetes.Interface, ns, pod
 	return out, nil
 }
 
-// terminateOne sends SIGTERM to PID 1 inside the named EC. Killing
+// terminateOne sends SIGHUP to PID 1 inside the named EC. Killing
 // PID 1 makes the container exit, which closes the exec stream
 // with a non-clean error — we tolerate the expected error shapes.
+//
+// Why SIGHUP and not SIGKILL/SIGTERM: with each EC in its own PID
+// namespace (see list-create-ec.go), PID 1 is the EC's interactive
+// shell (zsh for netshoot). Per pid_namespaces(7), signals sent to
+// PID 1 from *inside* the namespace are only delivered when PID 1
+// has a registered handler for them. SIGKILL and SIGSTOP can never
+// have handlers (kernel-uncatchable), so the kernel silently drops
+// them when delivered by a sibling — protection against the
+// container accidentally suicide-ing itself. SIGTERM has no default
+// handler in interactive zsh either, so it's dropped too.
+//
+// SIGHUP is the signal interactive shells install a handler for
+// (terminal-hangup) and treat as "exit gracefully". It's what an
+// SSH disconnect or detached tmux session sends. Empirically: SIGHUP
+// inside the namespace tears down PID 1 immediately and the kernel
+// then tears down the rest of the namespace; kubelet flips the EC
+// to Terminated within ~1s.
 func terminateOne(ctx context.Context, ns, pod, ec string) error {
 	client, config, err := kubeconfig.GetKubClient()
 	if err != nil {
@@ -106,7 +123,7 @@ func terminateOne(ctx context.Context, ns, pod, ec string) error {
 		SubResource("exec").
 		VersionedParams(&corev1.PodExecOptions{
 			Container: ec,
-			Command:   []string{"sh", "-c", "kill -TERM 1 2>/dev/null || kill 1"},
+			Command:   []string{"sh", "-c", "kill -HUP 1"},
 			Stdin:     false,
 			Stdout:    true,
 			Stderr:    true,

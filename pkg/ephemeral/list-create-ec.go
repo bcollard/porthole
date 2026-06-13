@@ -76,6 +76,16 @@ func Inject(c *gin.Context, namespace, pod, image, command string) (string, erro
 
 	debugCtrName := "porthole-" + uuid.New().String()[:8]
 
+	// TargetContainerName is intentionally omitted: when set, the EC
+	// joins the target container's PID namespace, which makes PID 1
+	// inside the EC the *target's* main process. `terminateOne` then
+	// runs `kill -TERM 1` and ends up SIGTERMing the app instead of
+	// the EC's shell — the pod sandbox restarts and every other EC in
+	// the pod gets SIGKILLed alongside. Keeping each EC in its own
+	// PID namespace makes `kill 1` mean what we want and isolates
+	// cleanup. The cost is losing `ps aux` visibility into the
+	// target's processes from inside the EC; for the network/DB
+	// debugging porthole is built for, that's an acceptable trade.
 	ec := corev1.EphemeralContainer{
 		EphemeralContainerCommon: corev1.EphemeralContainerCommon{
 			Name:                     debugCtrName,
@@ -85,7 +95,6 @@ func Inject(c *gin.Context, namespace, pod, image, command string) (string, erro
 			TTY:                      true,
 			TerminationMessagePolicy: corev1.TerminationMessageReadFile,
 		},
-		TargetContainerName: podObj.Spec.Containers[0].Name,
 	}
 	if command != "" {
 		ec.Command = []string{"sh", "-c", command}
