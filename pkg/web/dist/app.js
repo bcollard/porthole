@@ -16,13 +16,42 @@ const state = {
   namespaces: [],
   pods: [],
   ecs: [],
+  sessions: [],
   selectedNs: null,
   selectedPod: null,
+  // selectedEc is a denormalized view of state.activeKey's ec part,
+  // used by renderECBar / updateTargetText. Updated on switch.
   selectedEc: null,
-  term: null,
-  fit: null,
-  ws: null,
+  // Multi-session terminal state. Each entry:
+  //   { ns, pod, ec, key, ws, term, fit, container, dead }
+  // Keyed by `${ns}/${pod}/${ec}`. One entry per attached session in
+  // this browser tab; only one is visible at a time (activeKey).
+  attached: new Map(),
+  activeKey: null,
+  // Set<sessionKey> of ECs we've asked the server to terminate. Lets
+  // the EC bar + sessions dropdown hide them across refreshes /
+  // navigation — `pendingTerminate` alone is wiped whenever state.ecs
+  // is replaced, and kubelet often takes 1-3s (sometimes longer) to
+  // stamp Terminated=true after the process exits. Entries are
+  // dropped when the server confirms Terminated=true, or after 30s
+  // as a safety net so a stuck kubelet doesn't hide a chip forever.
+  terminating: new Set(),
 };
+
+function sessionKey(ns, pod, ec) {
+  return `${ns}/${pod}/${ec}`;
+}
+
+function markTerminating(ns, pod, ecName) {
+  const key = sessionKey(ns, pod, ecName);
+  state.terminating.add(key);
+  setTimeout(() => {
+    if (state.terminating.delete(key)) {
+      renderECBar();
+      renderSessions();
+    }
+  }, 30_000);
+}
 
 const $ = (id) => document.getElementById(id);
 
@@ -50,70 +79,47 @@ function toast(message, kind = "info") {
 }
 
 // ---------- terminal ----------
+const TERM_OPTIONS = {
+  fontFamily: 'ui-monospace, "SF Mono", Menlo, Consolas, monospace',
+  fontSize: 13,
+  lineHeight: 1.2,
+  cursorBlink: true,
+  cursorStyle: "bar",
+  allowProposedApi: true,
+  theme: {
+    background: "#000000",
+    foreground: "#e6e8ec",
+    cursor: "#6ea8fe",
+    cursorAccent: "#000000",
+    selectionBackground: "rgba(110,168,254,0.3)",
+    black: "#1a1f29",
+    red: "#f87171",
+    green: "#4ade80",
+    yellow: "#fbbf24",
+    blue: "#6ea8fe",
+    magenta: "#c084fc",
+    cyan: "#22d3ee",
+    white: "#e6e8ec",
+    brightBlack: "#475569",
+    brightRed: "#fca5a5",
+    brightGreen: "#86efac",
+    brightYellow: "#fde68a",
+    brightBlue: "#93c5fd",
+    brightMagenta: "#d8b4fe",
+    brightCyan: "#67e8f9",
+    brightWhite: "#f8fafc",
+  },
+};
+
+// initTerminal sets up the single ResizeObserver that refits whichever
+// term-pane is currently visible. Individual xterm.js instances are
+// created lazily by attachNewSession.
 function initTerminal() {
-  state.term = new Terminal({
-    fontFamily: 'ui-monospace, "SF Mono", Menlo, Consolas, monospace',
-    fontSize: 13,
-    lineHeight: 1.2,
-    cursorBlink: true,
-    cursorStyle: "bar",
-    allowProposedApi: true,
-    theme: {
-      background: "#000000",
-      foreground: "#e6e8ec",
-      cursor: "#6ea8fe",
-      cursorAccent: "#000000",
-      selectionBackground: "rgba(110,168,254,0.3)",
-      black: "#1a1f29",
-      red: "#f87171",
-      green: "#4ade80",
-      yellow: "#fbbf24",
-      blue: "#6ea8fe",
-      magenta: "#c084fc",
-      cyan: "#22d3ee",
-      white: "#e6e8ec",
-      brightBlack: "#475569",
-      brightRed: "#fca5a5",
-      brightGreen: "#86efac",
-      brightYellow: "#fde68a",
-      brightBlue: "#93c5fd",
-      brightMagenta: "#d8b4fe",
-      brightCyan: "#67e8f9",
-      brightWhite: "#f8fafc",
-    },
-  });
-  state.fit = new FitAddon();
-  state.term.loadAddon(state.fit);
-  state.term.loadAddon(new WebLinksAddon());
-  state.term.open($("terminal"));
-  try { state.fit.fit(); } catch (_) {}
-
-  const encoder = new TextEncoder();
-  state.term.onData((data) => {
-    if (state.ws && state.ws.readyState === WebSocket.OPEN) {
-      // Send stdin as a binary frame — text frames are reserved for
-      // JSON control messages (resize, etc).
-      state.ws.send(encoder.encode(data));
-    }
-  });
-
-  state.term.onResize(({ cols, rows }) => {
-    sendResize(cols, rows);
-  });
-
   const ro = new ResizeObserver(() => {
-    try { state.fit.fit(); } catch (_) {}
+    const rec = state.activeKey ? state.attached.get(state.activeKey) : null;
+    if (rec) { try { rec.fit.fit(); } catch (_) {} }
   });
   ro.observe($("terminal"));
-}
-
-function sendResize(cols, rows) {
-  if (!state.ws || state.ws.readyState !== WebSocket.OPEN) return;
-  state.ws.send(JSON.stringify({ type: "resize", cols, rows }));
-}
-
-function clearTerminal() {
-  state.term.reset();
 }
 
 // ---------- HTTP helpers ----------
@@ -309,6 +315,15 @@ async function loadEphemeralContainers(ns, pod) {
   try {
     const r = await http(`/explore/ns/${encodeURIComponent(ns)}/pods/${encodeURIComponent(pod)}/ec`);
     state.ecs = r.ephemeralContainers || [];
+    // Server has caught up on anything kubelet has stamped
+    // Terminated=true — drop those from the local "we asked to
+    // terminate" Set so we don't keep filtering them out of future
+    // refreshes for no reason.
+    for (const ec of state.ecs) {
+      if (ec.Terminated) {
+        state.terminating.delete(sessionKey(ns, pod, ec.Name));
+      }
+    }
     renderECBar();
   } catch (e) {
     state.ecs = [];
@@ -450,12 +465,28 @@ function renderECBar() {
     return;
   }
   // Ephemeral containers are immutable in the pod spec — k8s won't
-  // let us remove them — so a terminated EC lingers forever. Hide
-  // them: most users only want to see what's still alive.
+  // let us remove them — so a terminated EC lingers forever in the
+  // spec. Hide everything that isn't actively running: most users
+  // only want to see what's still alive.
+  //
+  // Why "Running" and not "not Terminated": kubelet takes ~1-3s to
+  // stamp State.Terminated after PID 1 exits, so right after a
+  // cleanup the EC briefly reports {Running:false, Terminated:false}.
+  // Filtering on `!Terminated` left those pills stuck on screen.
+  //
   // `pendingTerminate` is a client-only flag we set while a kill is
   // in flight; the pill stays visible (with a spinner) until the
-  // next server reload either flips Terminated=true or omits it.
-  const visible = state.ecs.filter((ec) => !ec.Terminated);
+  // next server reload either flips Terminated or drops Running.
+  //
+  // `state.terminating` is the longer-lived cousin: it survives the
+  // state.ecs reload and the user navigating away and back, so a pill
+  // can't pop back into view (and become clickable into a dead WS)
+  // just because kubelet hasn't stamped Terminated=true yet.
+  const visible = state.ecs.filter((ec) => {
+    const k = sessionKey(state.selectedNs, state.selectedPod, ec.Name);
+    if (state.terminating.has(k)) return false;
+    return ec.Running || ec.pendingTerminate;
+  });
 
   bar.innerHTML = "";
   if (visible.length === 0) {
@@ -503,7 +534,11 @@ function makeChip(ec) {
   chip.className = "ec-chip";
   if (ec.Running) chip.classList.add("running");
   if (ec.pendingTerminate) chip.classList.add("terminating");
-  if (ec.Name === state.selectedEc) chip.classList.add("active");
+  // Highlight only when this chip's (ns, pod, ec) matches the active
+  // session — otherwise a same-named chip in a different pod (rare
+  // but possible) would falsely light up.
+  const chipKey = sessionKey(state.selectedNs, state.selectedPod, ec.Name);
+  if (state.activeKey === chipKey) chip.classList.add("active");
   chip.title = ec.pendingTerminate
     ? "Terminating…"
     : ec.Running
@@ -565,8 +600,10 @@ async function terminateOneEC(ecName) {
   // Flip into the in-flight state — chip re-renders with a spinner
   // and stays visible until the server reload removes it for real.
   ec.pendingTerminate = true;
-  if (state.selectedEc === ecName) closeWebsocket();
+  markTerminating(ns, pod, ecName);
+  closeSessionByEc(ns, pod, ecName);
   renderECBar();
+  renderSessions();
 
   try {
     await http(
@@ -574,9 +611,12 @@ async function terminateOneEC(ecName) {
       { method: "POST" },
     );
     await loadEphemeralContainers(ns, pod);
+    loadSessions();
   } catch (e) {
     ec.pendingTerminate = false;
+    state.terminating.delete(sessionKey(ns, pod, ecName));
     renderECBar();
+    renderSessions();
     toast("Terminate failed: " + e.message, "error");
   }
 }
@@ -585,13 +625,15 @@ async function cleanupPod(btn) {
   if (!state.selectedNs || !state.selectedPod) return;
   const ns = state.selectedNs;
   const pod = state.selectedPod;
-  closeWebsocket();
 
   // Mark every porthole-* running EC pending, so each pill shows a
   // spinner alongside the button-level "Cleaning up…" indicator.
+  // Also close any local sessions we hold to this pod's ECs.
   for (const ec of state.ecs) {
     if (ec.Running && ec.Name.startsWith("porthole-")) {
       ec.pendingTerminate = true;
+      markTerminating(ns, pod, ec.Name);
+      closeSessionByEc(ns, pod, ec.Name);
     }
   }
   if (btn) {
@@ -613,6 +655,7 @@ async function cleanupPod(btn) {
     toast("Cleanup failed: " + e.message, "error");
   } finally {
     await loadEphemeralContainers(ns, pod);
+    loadSessions();
   }
 }
 
@@ -622,17 +665,22 @@ function updateTargetText() {
     el.textContent = "no pod selected";
     return;
   }
-  let s = `${state.selectedNs}/${state.selectedPod}`;
+  let s = `${state.selectedNs} :: ${state.selectedPod}`;
   if (state.selectedEc) s += ` :: ${state.selectedEc}`;
   el.textContent = s;
 }
 
 // ---------- selection handlers ----------
+// selectNamespace and selectPod move the sidebar around — they no
+// longer touch the attached-session map or the visible terminal.
+// The terminal stays attached to whatever EC the user last clicked,
+// regardless of where they're browsing. The EC chip for the active
+// session is highlighted only when the user's currently looking at
+// the same pod (renderECBar handles this).
 function selectNamespace(ns) {
   if (state.selectedNs === ns) return;
   state.selectedNs = ns;
   state.selectedPod = null;
-  state.selectedEc = null;
   state.pods = [];
   state.ecs = [];
   state.services = [];
@@ -640,7 +688,6 @@ function selectNamespace(ns) {
   $("ns-current").textContent = ns;
   $("ns-current-svc").textContent = ns;
   $("inject-btn").disabled = true;
-  closeWebsocket();
   renderNamespaces();
   renderPods();
   renderServices();
@@ -655,11 +702,9 @@ function selectNamespace(ns) {
 function selectPod(pod) {
   if (state.selectedPod === pod) return;
   state.selectedPod = pod;
-  state.selectedEc = null;
   state.ecs = [];
   state.podDetail = null;
   $("inject-btn").disabled = false;
-  closeWebsocket();
   renderPods();
   renderECBar();
   updateTargetText();
@@ -686,6 +731,7 @@ async function injectDebugger() {
       body: JSON.stringify(body),
     });
     toast(`Injected ${res.debugContainerName}`, "success");
+    loadSessions();
     // Poll briefly until the EC shows up as Running, then auto-attach.
     await pollAndAttach(state.selectedNs, state.selectedPod, res.debugContainerName);
   } catch (e) {
@@ -713,67 +759,199 @@ async function pollAndAttach(ns, pod, ecName) {
   toast(`Timed out waiting for ${ecName} to start`, "error");
 }
 
-// ---------- attach (websocket) ----------
-function closeWebsocket() {
-  if (state.ws) {
-    try { state.ws.close(); } catch (_) {}
-    state.ws = null;
-  }
-  state.selectedEc = null;
-  $("terminal").parentElement.classList.remove("has-session");
-  setStatus("idle", "Idle");
-  updateTargetText();
-}
+// ---------- attach (multi-session websockets) ----------
+//
+// Each attached EC has its own xterm.js Terminal in its own DOM div,
+// its own WebSocket, its own scrollback. Only one is visible at a
+// time (state.activeKey); the others sit hidden with display:none
+// while their WSes keep feeding output. Switching between them is
+// instant — no reconnect, no shell loss.
+//
+// openOrSwitchSession is the only public entry point. attachToEc
+// remains as a thin shim from the EC-chip click path.
 
 function attachToEc(ecName) {
-  closeWebsocket();
-  state.selectedEc = ecName;
-  renderECBar();
-  updateTargetText();
+  openOrSwitchSession(state.selectedNs, state.selectedPod, ecName);
+}
+
+function openOrSwitchSession(ns, pod, ec) {
+  if (!ns || !pod || !ec) return;
+  const key = sessionKey(ns, pod, ec);
+  const existing = state.attached.get(key);
+  if (existing && !existing.dead) {
+    switchToSession(key);
+    return;
+  }
+  // Re-opening a dead corpse → dispose first, then attach fresh.
+  if (existing) closeSession(key);
+  attachNewSession(ns, pod, ec);
+}
+
+function attachNewSession(ns, pod, ec) {
+  const key = sessionKey(ns, pod, ec);
+
+  const container = document.createElement("div");
+  container.className = "term-pane";
+  container.dataset.key = key;
+  container.style.display = "none"; // unhidden by switchToSession
+  $("terminal").appendChild(container);
+
+  const term = new Terminal(TERM_OPTIONS);
+  const fit = new FitAddon();
+  term.loadAddon(fit);
+  term.loadAddon(new WebLinksAddon());
+  term.open(container);
+
+  const rec = { ns, pod, ec, key, ws: null, term, fit, container, dead: false };
+  state.attached.set(key, rec);
+
+  // Per-session input + resize wiring. Each session writes only to
+  // its own WebSocket.
+  const encoder = new TextEncoder();
+  term.onData((data) => {
+    if (rec.ws && rec.ws.readyState === WebSocket.OPEN) {
+      rec.ws.send(encoder.encode(data));
+    }
+  });
+  term.onResize(({ cols, rows }) => {
+    if (rec.ws && rec.ws.readyState === WebSocket.OPEN) {
+      rec.ws.send(JSON.stringify({ type: "resize", cols, rows }));
+    }
+  });
 
   const wsScheme = window.location.protocol === "https:" ? "wss:" : "ws:";
   const url =
     `${wsScheme}//${window.location.host}${BASE_PATH}` +
-    `/term/${encodeURIComponent(state.selectedNs)}/${encodeURIComponent(state.selectedPod)}/${encodeURIComponent(ecName)}`;
-
-  setStatus("connecting", "Connecting…");
-  clearTerminal();
-  $("terminal").parentElement.classList.add("has-session");
-
+    `/term/${encodeURIComponent(ns)}/${encodeURIComponent(pod)}/${encodeURIComponent(ec)}`;
   const ws = new WebSocket(url);
   ws.binaryType = "arraybuffer";
-  state.ws = ws;
+  rec.ws = ws;
+
+  setStatus("connecting", "Connecting…");
 
   ws.addEventListener("open", () => {
-    setStatus("connected", `${state.selectedPod} :: ${ecName}`);
-    state.term.focus();
+    if (state.activeKey === key) {
+      setStatus("connected", `${ns} :: ${pod} :: ${ec}`);
+    }
     // Sync the remote PTY size to the local xterm, then nudge for a prompt.
-    sendResize(state.term.cols, state.term.rows);
-    const encoder = new TextEncoder();
-    ws.send(encoder.encode("\r"));
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
+      ws.send(encoder.encode("\r"));
+    }
+    if (state.activeKey === key) term.focus();
   });
 
   ws.addEventListener("message", (ev) => {
     if (ev.data instanceof ArrayBuffer) {
-      state.term.write(new Uint8Array(ev.data));
+      term.write(new Uint8Array(ev.data));
     } else {
-      state.term.write(ev.data);
+      term.write(ev.data);
     }
   });
 
   ws.addEventListener("close", (ev) => {
-    if (state.ws === ws) {
-      state.ws = null;
-      const reason = ev.reason || (ev.wasClean ? "closed" : "lost");
+    rec.dead = true;
+    const reason = ev.reason || (ev.wasClean ? "closed" : "lost");
+    term.writeln(`\r\n\x1b[2;37m[connection ${escapeAnsi(reason)}]\x1b[0m`);
+    if (state.activeKey === key) {
       setStatus("idle", "Disconnected");
-      state.term.writeln(`\r\n\x1b[2;37m[connection ${escapeAnsi(reason)}]\x1b[0m`);
     }
+    renderECBar();
+    renderSessions();
   });
 
   ws.addEventListener("error", () => {
-    setStatus("error", "Connection error");
-    toast("WebSocket error", "error");
+    if (state.activeKey === key) {
+      setStatus("error", "Connection error");
+    }
+    toast(`WebSocket error: ${pod} :: ${ec}`, "error");
   });
+
+  switchToSession(key);
+}
+
+// switchToSession makes `key`'s term-pane visible and pulls the
+// sidebar selection along so the EC chip list reflects what you're
+// looking at.
+//
+// Idempotent re-entry on purpose: clicking the already-active session
+// in the dropdown after wandering the sidebar elsewhere should
+// re-align the sidebar back to where the terminal lives. The inner
+// selectNamespace/selectPod calls short-circuit when sidebar is
+// already on the right ns/pod, so the cost when nothing's drifted is
+// just a couple of equality checks.
+function switchToSession(key) {
+  for (const [k, rec] of state.attached) {
+    rec.container.style.display = k === key ? "" : "none";
+  }
+  state.activeKey = key;
+  const rec = state.attached.get(key);
+  if (!rec) {
+    state.selectedEc = null;
+    $("terminal").parentElement.classList.remove("has-session");
+    setStatus("idle", "Idle");
+    renderECBar();
+    updateTargetText();
+    renderSessions();
+    return;
+  }
+  $("terminal").parentElement.classList.add("has-session");
+  // Drag the sidebar to follow the active session. selectNamespace
+  // and selectPod no-op when already on that ns/pod, so this is safe.
+  if (state.selectedNs !== rec.ns) selectNamespace(rec.ns);
+  if (state.selectedPod !== rec.pod) selectPod(rec.pod);
+  state.selectedEc = rec.ec;
+  if (rec.dead) {
+    setStatus("idle", "Disconnected");
+  } else if (rec.ws && rec.ws.readyState === WebSocket.OPEN) {
+    setStatus("connected", `${rec.ns} :: ${rec.pod} :: ${rec.ec}`);
+  } else {
+    setStatus("connecting", "Connecting…");
+  }
+  // Visible pane has dimensions now; refit + focus on the next tick.
+  setTimeout(() => {
+    try { rec.fit.fit(); } catch (_) {}
+    rec.term.focus();
+  }, 0);
+  renderECBar();
+  updateTargetText();
+  renderSessions();
+}
+
+// closeSession terminates the WS, disposes the xterm, removes the
+// pane from the DOM. If the closed session was the visible one,
+// switches to another attached session if any, otherwise clears
+// the terminal pane.
+function closeSession(key) {
+  const rec = state.attached.get(key);
+  if (!rec) return;
+  try { rec.ws && rec.ws.close(); } catch (_) {}
+  try { rec.term.dispose(); } catch (_) {}
+  rec.container.remove();
+  state.attached.delete(key);
+  if (state.activeKey === key) {
+    state.activeKey = null;
+    const nextKey = state.attached.keys().next().value || null;
+    if (nextKey) {
+      switchToSession(nextKey);
+    } else {
+      state.selectedEc = null;
+      $("terminal").parentElement.classList.remove("has-session");
+      setStatus("idle", "Idle");
+      renderECBar();
+      updateTargetText();
+      renderSessions();
+    }
+  } else {
+    renderSessions();
+  }
+}
+
+// closeSessionByEc finds and closes any attached session whose EC
+// name matches, regardless of which ns/pod (the EC name is unique
+// per pod, so we also key by pod to be safe).
+function closeSessionByEc(ns, pod, ec) {
+  closeSession(sessionKey(ns, pod, ec));
 }
 
 // ---------- helpers ----------
@@ -860,17 +1038,184 @@ function setupOverflowHints() {
   updateOverflowHints();
 }
 
+// ---------- active sessions ----------
+// Cluster-wide list of running porthole-* ECs, surfaced in a topbar
+// dropdown so the user can jump back to a session they injected in
+// a different namespace+pod without having to remember where they
+// parked it. Backed by GET /debug/sessions; per-entry visibility is
+// gated by OPA `list_pods` at request time.
+let sessionsTimer = null;
+
+async function loadSessions() {
+  try {
+    const r = await http("/debug/sessions");
+    state.sessions = r.sessions || [];
+    state.sessionsTotal = r.total || 0;
+  } catch (e) {
+    // 403/network failure: just collapse the widget. The rest of
+    // the UI still works — this is a quality-of-life affordance.
+    state.sessions = [];
+    state.sessionsTotal = 0;
+    console.warn("loadSessions:", e.message);
+  }
+  renderSessions();
+}
+
+function sessionAge(iso) {
+  if (!iso) return "";
+  const t = Date.parse(iso);
+  if (!t) return "";
+  const secs = Math.max(1, Math.floor((Date.now() - t) / 1000));
+  if (secs < 60) return `${secs}s`;
+  const mins = Math.floor(secs / 60);
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h`;
+  return `${Math.floor(hours / 24)}d`;
+}
+
+function renderSessions() {
+  const wrap = $("sessions");
+  const countEl = $("sessions-count");
+  const labelEl = $("sessions-label");
+  const menuEl = $("sessions-menu");
+  // Filter out anything we've asked the server to terminate but
+  // kubelet hasn't caught up on yet — same Set the EC bar uses.
+  const list = (state.sessions || []).filter(
+    (s) => !state.terminating.has(sessionKey(s.namespace, s.pod, s.ec)),
+  );
+  const total = state.sessionsTotal || 0;
+  // Show the widget as long as there's any porthole activity —
+  // either visible to this user, or cluster-wide (so "/ N total"
+  // still tells the user something even if all the ECs live in
+  // namespaces they can't browse).
+  if (list.length === 0 && total === 0) {
+    wrap.hidden = true;
+    closeSessionsMenu();
+    return;
+  }
+  wrap.hidden = false;
+  countEl.textContent = String(list.length);
+  labelEl.textContent = list.length === 1 ? "session" : "sessions";
+
+  // Discrete total-cluster-EC badge. Always shown when the widget
+  // is visible; tooltip explains it ignores access rights.
+  const totalEl = $("sessions-total");
+  totalEl.textContent = `/ ${total}`;
+  totalEl.hidden = false;
+
+  menuEl.innerHTML = "";
+  for (const s of list) {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "sessions-item";
+    item.setAttribute("role", "menuitem");
+
+    // Tri-state badge per entry:
+    //   ● is-active   → attached in this tab AND currently visible
+    //   ○ is-attached → attached in this tab, hidden behind another
+    //   (none)        → not yet attached in this tab; first click
+    //                   will open a fresh shell (empty)
+    const key = sessionKey(s.namespace, s.pod, s.ec);
+    let dotClass = "session-dot";
+    let dotChar = "";
+    if (state.activeKey === key) {
+      item.classList.add("is-active");
+      dotClass += " is-active";
+      dotChar = "●";
+    } else if (state.attached.has(key)) {
+      item.classList.add("is-attached");
+      dotClass += " is-attached";
+      dotChar = "○";
+    }
+
+    // EC name (porthole-<hash>) goes in its own line so the user can
+    // cross-reference with kubectl/logs without parsing a long meta
+    // string. Image + age stay on a third muted line below.
+    const meta = [s.image, sessionAge(s.started_at)]
+      .filter(Boolean)
+      .join(" · ");
+    item.innerHTML =
+      `<span class="${dotClass}" aria-hidden="true">${dotChar}</span>` +
+      `<span class="sessions-body">` +
+        `<span class="sessions-loc">` +
+          `${escapeHtml(s.namespace)} / ` +
+          `<span class="sessions-pod">${escapeHtml(s.pod)}</span>` +
+        `</span>` +
+        `<span class="sessions-ec">${escapeHtml(s.ec)}</span>` +
+        `<span class="sessions-meta">${escapeHtml(meta)}</span>` +
+      `</span>`;
+    item.title = s.ec;
+    item.addEventListener("click", () => jumpToSession(s));
+    menuEl.appendChild(item);
+  }
+}
+
+function jumpToSession(s) {
+  closeSessionsMenu();
+  // openOrSwitchSession opens a new WS+xterm pair the first time we
+  // touch a session, otherwise just flips visibility — so jumping
+  // back and forth between two sessions never re-spawns shells.
+  // It also drags the sidebar to follow the active session.
+  openOrSwitchSession(s.namespace, s.pod, s.ec);
+}
+
+function toggleSessionsMenu() {
+  const menu = $("sessions-menu");
+  const toggle = $("sessions-toggle");
+  const willOpen = menu.hidden;
+  menu.hidden = !willOpen;
+  toggle.setAttribute("aria-expanded", String(willOpen));
+}
+
+function closeSessionsMenu() {
+  const menu = $("sessions-menu");
+  const toggle = $("sessions-toggle");
+  if (menu.hidden) return;
+  menu.hidden = true;
+  toggle.setAttribute("aria-expanded", "false");
+}
+
+function setupSessionsWidget() {
+  $("sessions-toggle").addEventListener("click", (e) => {
+    e.stopPropagation();
+    toggleSessionsMenu();
+  });
+  $("sessions-refresh").addEventListener("click", async (e) => {
+    e.stopPropagation();
+    const btn = e.currentTarget;
+    btn.classList.add("busy");
+    try { await loadSessions(); } finally {
+      btn.classList.remove("busy");
+    }
+  });
+  document.addEventListener("click", (e) => {
+    if (!$("sessions").contains(e.target)) closeSessionsMenu();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeSessionsMenu();
+  });
+  if (sessionsTimer) clearInterval(sessionsTimer);
+  // 15s is short enough for the count to feel live, long enough that
+  // a tab idle in the background isn't a constant API drumbeat. The
+  // inject/cleanup paths also call loadSessions() directly so
+  // user-driven changes show up immediately.
+  sessionsTimer = setInterval(loadSessions, 15_000);
+}
+
 // ---------- boot ----------
 async function init() {
   initTerminal();
   setStatus("idle", "Idle");
   setupFilters();
   setupOverflowHints();
+  setupSessionsWidget();
   updateInstructions();
   $("inject-btn").addEventListener("click", injectDebugger);
   await loadConfig();
   await loadMe();
   await loadNamespaces();
+  await loadSessions();
 }
 
 init().catch((e) => {
