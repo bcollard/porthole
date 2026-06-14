@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/bcollard/porthole/pkg/auth"
+	"github.com/bcollard/porthole/pkg/ephemeral"
 	"github.com/bcollard/porthole/pkg/kubeconfig"
 	"github.com/gin-gonic/gin"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -21,6 +22,11 @@ type Session struct {
 	EC        string `json:"ec"`
 	Image     string `json:"image,omitempty"`
 	StartedAt string `json:"started_at,omitempty"`
+	// ExtendedUntil is the per-EC "do not sweep before" override
+	// from ephemeral.Extend(). Empty when no extension is in place;
+	// the SPA computes the effective expiry as max(startedAt+ttl,
+	// extendedUntil) to drive the pre-sweep alert.
+	ExtendedUntil string `json:"extended_until,omitempty"`
 }
 
 // ListSessions returns every running porthole-injected ephemeral
@@ -94,6 +100,9 @@ func ListSessions(c *gin.Context) {
 			}
 			if !st.State.Running.StartedAt.IsZero() {
 				s.StartedAt = st.State.Running.StartedAt.UTC().Format(time.RFC3339)
+			}
+			if ext := ephemeral.ExtendedUntil(ns, pod.Name, st.Name); !ext.IsZero() {
+				s.ExtendedUntil = ext.UTC().Format(time.RFC3339)
 			}
 			out = append(out, s)
 		}

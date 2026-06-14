@@ -54,6 +54,7 @@ func router(jwtMW gin.HandlerFunc) http.Handler {
 	api.GET("/explore/ns/:ns/svc", controllers.GetServices)
 
 	api.GET("/debug/sessions", controllers.ListSessions)
+	api.POST("/debug/sessions/:ns/:pod/:ec/extend", controllers.ExtendSession)
 	api.POST("/debug/inject", controllers.Inject)
 	api.POST("/debug/cleanup/:ns/:pod", controllers.Cleanup)
 	api.POST("/debug/cleanup/:ns/:pod/:ec", controllers.CleanupOne)

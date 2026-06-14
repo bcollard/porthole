@@ -131,10 +131,20 @@ func GetConfig(c *gin.Context) {
 			idpLogoutURL = strings.TrimRight(issuer, "/") + "/protocol/openid-connect/logout"
 		}
 	}
+	// ecSweepTTL is surfaced as a string so the SPA can render the
+	// EC-info banner's TTL countdown without re-parsing env. Empty
+	// when EC_SWEEP_TTL is unset/zero — the SPA hides the countdown
+	// in that case. Returned in nanoseconds (Go's String() format
+	// like "30m0s") so the SPA can use Date.parse-style math.
+	var sweepTTLSeconds int64
+	if d, err := time.ParseDuration(os.Getenv("EC_SWEEP_TTL")); err == nil && d > 0 {
+		sweepTTLSeconds = int64(d / time.Second)
+	}
 	c.JSON(http.StatusOK, gin.H{
-		"defaultImage": defaultDebugImage,
-		"logoutPath":   logoutPath,
-		"idpLogoutURL": idpLogoutURL,
+		"defaultImage":    defaultDebugImage,
+		"logoutPath":      logoutPath,
+		"idpLogoutURL":    idpLogoutURL,
+		"ecSweepTTLSecs":  sweepTTLSeconds,
 	})
 }
 

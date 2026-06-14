@@ -19,6 +19,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bcollard/porthole/pkg/kubeconfig"
@@ -34,6 +35,50 @@ import (
 // it creates ("porthole-<uuid8>"). Cleanup and Sweep filter on it
 // so we never touch ECs another tool created.
 const PortholeECPrefix = "porthole-"
+
+// Per-EC "do not terminate before" timestamps the sweeper consults.
+// Set by Extend() in response to user-initiated "give me another
+// TTL" requests; cleared when the EC is finally terminated or
+// disappears. In-memory only — a porthole restart loses any
+// extensions, which is acceptable since the sweeper would then run
+// with a fresh clock anyway.
+var (
+	extendedMu    sync.Mutex
+	extendedUntil = map[string]time.Time{}
+)
+
+func extendKey(ns, pod, ec string) string {
+	return ns + "/" + pod + "/" + ec
+}
+
+// Extend records (or refreshes) a "do not sweep before now+duration"
+// promise for the named EC. Returns the effective expiry. Refuses
+// any name that's not porthole-prefixed.
+func Extend(ns, pod, ec string, duration time.Duration) (time.Time, error) {
+	if !strings.HasPrefix(ec, PortholeECPrefix) {
+		return time.Time{}, fmt.Errorf("refusing to extend non-porthole EC %q", ec)
+	}
+	until := time.Now().Add(duration)
+	extendedMu.Lock()
+	extendedUntil[extendKey(ns, pod, ec)] = until
+	extendedMu.Unlock()
+	return until, nil
+}
+
+// ExtendedUntil reports the "do not sweep before" timestamp the
+// sweeper should respect for this EC, or the zero value when no
+// extension exists.
+func ExtendedUntil(ns, pod, ec string) time.Time {
+	extendedMu.Lock()
+	defer extendedMu.Unlock()
+	return extendedUntil[extendKey(ns, pod, ec)]
+}
+
+func clearExtension(ns, pod, ec string) {
+	extendedMu.Lock()
+	delete(extendedUntil, extendKey(ns, pod, ec))
+	extendedMu.Unlock()
+}
 
 // Terminated reports per-EC outcomes from Cleanup. OK=true means
 // the kill signal was delivered successfully (the EC's exit may
@@ -206,7 +251,7 @@ func sweepOnce(ctx context.Context, ttl time.Duration) {
 		klog.Warningf("sweeper: list pods: %v", err)
 		return
 	}
-	cutoff := time.Now().Add(-ttl)
+	now := time.Now()
 	for _, p := range pods.Items {
 		for _, st := range p.Status.EphemeralContainerStatuses {
 			if !strings.HasPrefix(st.Name, PortholeECPrefix) {
@@ -215,13 +260,21 @@ func sweepOnce(ctx context.Context, ttl time.Duration) {
 			if st.State.Running == nil {
 				continue
 			}
-			if st.State.Running.StartedAt.Time.After(cutoff) {
+			// The base expiry is startedAt + ttl. A user-set
+			// extension can push it later — take whichever is
+			// further out.
+			expiry := st.State.Running.StartedAt.Time.Add(ttl)
+			if ext := ExtendedUntil(p.Namespace, p.Name, st.Name); ext.After(expiry) {
+				expiry = ext
+			}
+			if now.Before(expiry) {
 				continue
 			}
 			if err := terminateOne(ctx, p.Namespace, p.Name, st.Name); err != nil {
 				klog.Warningf("sweeper: terminate %s/%s/%s: %v", p.Namespace, p.Name, st.Name, err)
 				continue
 			}
+			clearExtension(p.Namespace, p.Name, st.Name)
 			klog.Infof("sweeper: terminated %s/%s/%s (age > %s)", p.Namespace, p.Name, st.Name, ttl)
 		}
 	}
