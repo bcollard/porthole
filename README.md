@@ -162,10 +162,12 @@ confusion attacks are rejected at the library level.
 
 ## Authorization (OPA)
 
-Every handler asks OPA for a yes/no decision before touching the kube
-API. OPA runs as a sidecar in the porthole pod; policy + data come from
-a ConfigMap (you can override it via chart values or by mounting your
-own bundle).
+Every handler asks OPA for a yes/no decision before touching the
+kube API. OPA runs as a sidecar in the porthole pod; policy + data
+come from a ConfigMap (override via chart values or mount your own
+bundle).
+
+The shape porthole sends to OPA on every decision:
 
 ```json
 {
@@ -178,13 +180,37 @@ own bundle).
 }
 ```
 
-The action vocabulary is fixed (in `pkg/auth/opa.go` + the Rego):
+### Action vocabulary
 
-- `list_namespaces`, `list_pods`, `list_ec`
-- `inject_ec`, `attach_ec`, `terminate_ec`
+Fixed set (`pkg/auth/opa.go` + the Rego). Handlers ask OPA for
+exactly one of these per request:
 
-`policy/data.json` defines two tables: **roles** (action bundles) and
-**bindings** (group → role → namespace scope).
+| Action            | Triggered by                              |
+|-------------------|-------------------------------------------|
+| `list_namespaces` | the namespace picker (cluster-wide)       |
+| `list_pods`       | the pod picker, Service Viewer, the cluster-wide Sessions endpoint (per namespace) |
+| `list_ec`         | the EC chip bar refresh (per pod)         |
+| `inject_ec`       | clicking + Debugger                       |
+| `attach_ec`       | opening a WebSocket terminal to an EC     |
+| `terminate_ec`    | clicking ×, "Clean up all", or the sweeper |
+
+### Built-in roles
+
+`policy/data.json` ships three roles. They're just action bundles —
+override or extend at will.
+
+| Role       | Actions it bundles                                                              | Intent                            |
+|------------|---------------------------------------------------------------------------------|-----------------------------------|
+| `viewer`   | `list_namespaces`, `list_pods`, `list_ec`                                       | read-only browse                  |
+| `debugger` | viewer + `inject_ec`, `attach_ec`, `terminate_ec`                               | full operate                      |
+| `admin`    | same as `debugger` today                                                        | grant-everywhere convenience role |
+
+### Bindings — how groups map to roles
+
+A binding answers *"which groups get which role on which
+namespaces?"* — exactly one role, scoped by zero or more matchers.
+Multiple bindings may match the same request; the decision is
+**allow if any binding matches** (default-deny otherwise).
 
 ```json
 {
@@ -199,21 +225,55 @@ The action vocabulary is fixed (in `pkg/auth/opa.go` + the Rego):
     "bindings": [
       { "group": "porthole-admins", "role": "admin",    "namespace_glob": "*" },
       { "group": "team-a",          "role": "debugger", "namespace_glob": "team-a-*" },
-      { "group": "secops",          "role": "debugger",
-        "namespace_labels": { "tier": "production" } }
+      { "group": "secops",          "role": "debugger", "namespace_labels": { "tier": "production" } },
+      { "group": "on-call",         "role": "debugger", "namespace_glob": "*", "business_hours": true }
     ]
   }
 }
 ```
 
-A binding can scope by **glob**, by **namespace labels**, or by **both
-together** (logical AND). Cluster-wide actions (`list_namespaces`)
-require an unconditional `namespace_glob: "*"` — a label-scoped binding
-cannot grant them.
+### Binding matchers (the full vocabulary)
 
-`business_hours: true` on a binding restricts it to Mon-Fri 09:00–17:00
-UTC. Namespace labels are fetched lazily from the kube API and cached
-for 60s (`pkg/authdata`, fail-open).
+A binding combines a **group + role** with one or more of the
+matchers below. Multiple matchers on the same binding compose with
+**logical AND** — a glob *and* a label set *and* a time window all
+have to hold for the binding to grant.
+
+| Matcher            | Type                       | Behavior                                                                                                                                                     |
+|--------------------|----------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `group`            | string (required)          | The user's JWT must carry this in `groups`. Read from the `groups` claim, falling back to Keycloak's `realm_access.roles`. |
+| `role`             | string (required)          | Name of an entry in `roles`. The binding grants exactly that action bundle.                                                                                  |
+| `namespace_glob`   | shell-style glob           | Match against `request.namespace`. `*` is cluster-wide; `team-a-*` matches `team-a-prod`, `team-a-staging`, etc. Required for cluster-wide actions (`list_namespaces`) — a label-only binding cannot grant them. |
+| `namespace_labels` | `{ key: value, ... }`      | All key=value pairs must equal labels on the namespace. Labels are read from the kube API and cached 60s (`pkg/authdata`, fail-open).                        |
+| `business_hours`   | bool (default false)       | When `true`, binding only matches Mon-Fri 09:00–17:00 **UTC**. Time comes from `input.now` (porthole stamps it per request).                                  |
+
+Cluster-wide actions (`list_namespaces`) have `request.namespace = ""`
+and no labels — only a binding with `namespace_glob: "*"` and no
+labels grants them. This is on purpose so a binding like
+`namespace_labels: {tier: production}` doesn't accidentally widen
+into "you can also list every namespace just to find the production
+ones".
+
+### Worked patterns
+
+A few non-obvious combinations that come up:
+
+```jsonc
+// Production-only on-call rotation, business hours
+{ "group": "oncall-secops", "role": "debugger",
+  "namespace_labels": { "tier": "production" },
+  "business_hours": true }
+
+// Team A may debug anywhere in their *namespaces, plus read-only
+// elsewhere (split into two bindings — they don't intersect)
+{ "group": "team-a", "role": "debugger", "namespace_glob": "team-a-*" },
+{ "group": "team-a", "role": "viewer",   "namespace_glob": "*" }
+
+// Two conditions combined: must hold a label AND match a glob
+{ "group": "billing-leads", "role": "debugger",
+  "namespace_glob": "billing-*",
+  "namespace_labels": { "owner": "billing" } }
+```
 
 ### Editing the policy
 
@@ -223,7 +283,7 @@ make opa-eval         # 15-case local sanity check, no cluster required
 ```
 
 In a helm-installed cluster, push the edited policy through chart
-values:
+values (OPA hot-reloads the mounted files — no pod restart needed):
 
 ```sh
 helm upgrade porthole ./helm-chart/porthole \
@@ -232,7 +292,15 @@ helm upgrade porthole ./helm-chart/porthole \
   --set-file opa.data=./policy/data.json
 ```
 
-OPA hot-reloads the mounted files; no pod restart needed.
+### What the SPA gets back
+
+The SPA also calls a second OPA rule — `effective_bindings` — to
+render the user's role chips in the topbar. It returns every
+binding whose `group` matches one of the user's groups, regardless
+of action/namespace, so a logged-in user can see what they're
+allowed to do before they click. New rule in `policy/porthole.rego`;
+custom policies should keep it intact (or the topbar chips degrade
+silently).
 
 ## Ephemeral container cleanup
 
