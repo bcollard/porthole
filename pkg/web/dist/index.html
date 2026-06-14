@@ -89,6 +89,13 @@
       </div>
     </div>
     <div class="ec-bar" id="ec-bar" aria-label="Ephemeral containers"></div>
+    <div class="ec-banner" id="ec-banner" hidden aria-label="Active session details">
+      <span class="ec-banner-field"><span class="ec-banner-label">ns</span>      <span id="ec-banner-ns"></span></span>
+      <span class="ec-banner-field"><span class="ec-banner-label">pod</span>     <span id="ec-banner-pod"></span></span>
+      <span class="ec-banner-field"><span class="ec-banner-label">ec</span>      <span id="ec-banner-ec"></span></span>
+      <span class="ec-banner-field"><span class="ec-banner-label">image</span>   <span id="ec-banner-image"></span></span>
+      <span class="ec-banner-field ec-banner-ttl" id="ec-banner-ttl-wrap" hidden><span class="ec-banner-label">sweeps</span> <span id="ec-banner-ttl"></span></span>
+    </div>
     <div class="terminal-wrap">
       <div id="terminal"></div>
       <div class="terminal-empty" id="terminal-empty">
@@ -101,6 +108,17 @@
     </div>
   </section>
 </main>
+
+<div class="alert" id="ttl-alert" hidden role="alert" aria-live="assertive">
+  <div class="alert-body">
+    <strong class="alert-title">Session about to be auto-swept</strong>
+    <span class="alert-msg" id="ttl-alert-msg"></span>
+  </div>
+  <div class="alert-actions">
+    <button class="alert-btn extend" id="ttl-alert-extend" type="button">Extend</button>
+    <button class="alert-btn dismiss" id="ttl-alert-dismiss" type="button">Dismiss</button>
+  </div>
+</div>
 
 <script type="module" src="./app.js"></script>
 </body>

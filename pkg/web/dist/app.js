@@ -420,6 +420,22 @@ function renderTargetLabels() {
 }
 
 // ---------- render ----------
+// `state.attached` is the source of truth for "where this tab has an
+// open shell". Build small sets once per render so the lists below
+// can check membership in O(1).
+function attachedNsSet() {
+  const out = new Set();
+  for (const rec of state.attached.values()) out.add(rec.ns);
+  return out;
+}
+function attachedPodSet(ns) {
+  const out = new Set();
+  for (const rec of state.attached.values()) {
+    if (rec.ns === ns) out.add(rec.pod);
+  }
+  return out;
+}
+
 function renderNamespaces() {
   const filter = $("ns-filter").value.toLowerCase();
   const filtered = state.namespaces.filter((n) => n.toLowerCase().includes(filter));
@@ -428,12 +444,16 @@ function renderNamespaces() {
     ul.innerHTML = `<li class="empty">No namespaces.</li>`;
     return;
   }
+  const withSession = attachedNsSet();
   ul.innerHTML = "";
   for (const ns of filtered) {
     const li = document.createElement("li");
-    li.textContent = ns;
     li.title = ns;
     if (ns === state.selectedNs) li.classList.add("active");
+    if (withSession.has(ns)) li.classList.add("has-session");
+    li.innerHTML =
+      `<span class="ns-name">${escapeHtml(ns)}</span>` +
+      (withSession.has(ns) ? `<span class="ns-session-dot" aria-label="has active session"></span>` : "");
     li.addEventListener("click", () => selectNamespace(ns));
     ul.appendChild(li);
   }
@@ -447,12 +467,16 @@ function renderPods() {
     ul.innerHTML = `<li class="empty">No pods.</li>`;
     return;
   }
+  const withSession = attachedPodSet(state.selectedNs);
   ul.innerHTML = "";
   for (const pod of filtered) {
     const li = document.createElement("li");
-    li.textContent = pod;
     li.title = pod;
     if (pod === state.selectedPod) li.classList.add("active");
+    if (withSession.has(pod)) li.classList.add("has-session");
+    li.innerHTML =
+      `<span class="pod-name">${escapeHtml(pod)}</span>` +
+      (withSession.has(pod) ? `<span class="pod-session-dot" aria-label="has active session"></span>` : "");
     li.addEventListener("click", () => selectPod(pod));
     ul.appendChild(li);
   }
@@ -802,6 +826,16 @@ function attachNewSession(ns, pod, ec) {
   term.loadAddon(new WebLinksAddon());
   term.open(container);
 
+  // Copy-on-select, iTerm-style. Whenever the user finishes a mouse
+  // drag (or programmatic selection), push the selected text to the
+  // system clipboard. Browser clipboard write can fail silently in
+  // unfocused tabs or under restrictive permissions — we swallow
+  // those errors so a partial selection doesn't spam toasts.
+  term.onSelectionChange(() => {
+    const sel = term.getSelection();
+    if (sel) navigator.clipboard.writeText(sel).catch(() => {});
+  });
+
   const rec = { ns, pod, ec, key, ws: null, term, fit, container, dead: false };
   state.attached.set(key, rec);
 
@@ -833,12 +867,22 @@ function attachNewSession(ns, pod, ec) {
     if (state.activeKey === key) {
       setStatus("connected", `${ns} :: ${pod} :: ${ec}`);
     }
-    // Sync the remote PTY size to the local xterm, then nudge for a prompt.
-    if (ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
-      ws.send(encoder.encode("\r"));
-    }
-    if (state.activeKey === key) term.focus();
+    // Defer the initial resize + prompt-nudge until the browser has
+    // actually laid out the term-pane. Without this rAF, the WS can
+    // win the race against switchToSession's setTimeout-driven fit
+    // and we'd send the xterm default (80x24) as the initial PTY
+    // size — which makes p10k's instant-prompt blow up and dump the
+    // raw $PS1 expression into the terminal. After fit() runs the
+    // pane has real cols/rows; the shell sees the right SIGWINCH
+    // first thing.
+    requestAnimationFrame(() => {
+      try { fit.fit(); } catch (_) {}
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
+        ws.send(encoder.encode("\r"));
+      }
+      if (state.activeKey === key) term.focus();
+    });
   });
 
   ws.addEventListener("message", (ev) => {
@@ -916,6 +960,9 @@ function switchToSession(key) {
   renderECBar();
   updateTargetText();
   renderSessions();
+  renderNamespaces();
+  renderPods();
+  renderECBanner();
 }
 
 // closeSession terminates the WS, disposes the xterm, removes the
@@ -1038,6 +1085,193 @@ function setupOverflowHints() {
   updateOverflowHints();
 }
 
+// ---------- EC info banner ----------
+// Lives directly above the terminal pane. Shows the active session's
+// ns/pod/ec/image plus a countdown to auto-sweep (when EC_SWEEP_TTL
+// is enabled server-side). Show/hide tracks the visible terminal.
+function ecBannerStartedAt(key) {
+  // Cross-reference state.sessions (server view) for the started_at
+  // timestamp. Fall back to null when the server view hasn't caught
+  // up yet — the TTL line stays hidden in that case.
+  for (const s of state.sessions || []) {
+    if (sessionKey(s.namespace, s.pod, s.ec) === key) return s.started_at || null;
+  }
+  return null;
+}
+
+function ecBannerImage(rec) {
+  for (const s of state.sessions || []) {
+    if (sessionKey(s.namespace, s.pod, s.ec) === rec.key) return s.image;
+  }
+  return null;
+}
+
+function renderECBanner() {
+  const banner = $("ec-banner");
+  if (!state.activeKey) {
+    banner.hidden = true;
+    return;
+  }
+  const rec = state.attached.get(state.activeKey);
+  if (!rec) {
+    banner.hidden = true;
+    return;
+  }
+  banner.hidden = false;
+  $("ec-banner-ns").textContent  = rec.ns;
+  $("ec-banner-pod").textContent = rec.pod;
+  $("ec-banner-ec").textContent  = rec.ec;
+  $("ec-banner-image").textContent = ecBannerImage(rec) || "—";
+  updateECBannerTTL();
+}
+
+function fmtRemaining(secs) {
+  if (secs <= 0) return "expired";
+  if (secs < 60) return `in ${secs}s`;
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  if (m < 60) return s ? `in ${m}m ${s}s` : `in ${m}m`;
+  const h = Math.floor(m / 60);
+  return `in ${h}h ${m % 60}m`;
+}
+
+function updateECBannerTTL() {
+  const wrap = $("ec-banner-ttl-wrap");
+  const ttlEl = $("ec-banner-ttl");
+  const sweep = (state.config && state.config.ecSweepTTLSecs) || 0;
+  if (!state.activeKey || sweep <= 0) {
+    wrap.hidden = true;
+    return;
+  }
+  const startedIso = ecBannerStartedAt(state.activeKey);
+  if (!startedIso) {
+    wrap.hidden = true;
+    return;
+  }
+  const started = Date.parse(startedIso);
+  if (!started) {
+    wrap.hidden = true;
+    return;
+  }
+  const expiresAt = started + sweep * 1000;
+  const remaining = Math.floor((expiresAt - Date.now()) / 1000);
+  wrap.hidden = false;
+  ttlEl.textContent = fmtRemaining(remaining);
+  ttlEl.classList.toggle("ec-banner-ttl-soon", remaining > 0 && remaining <= 120);
+  ttlEl.classList.toggle("ec-banner-ttl-expired", remaining <= 0);
+}
+
+// 1Hz tick keeps the countdown live without recomputing everything.
+// The same tick drives the pre-sweep alert below.
+setInterval(() => {
+  updateECBannerTTL();
+  checkTTLAlerts();
+}, 1000);
+
+// ---------- pre-sweep alert ----------
+// 120 seconds before the sweeper would terminate an attached
+// session, pop a visible alert with [Extend] / [Dismiss]. Extend
+// hits the backend's per-EC extension map (next full TTL).
+// Dismiss hides for 60s, then re-pops if still within the window.
+const TTL_ALERT_LEAD_SECS = 120;
+const TTL_ALERT_DISMISS_SECS = 60;
+// Set of session keys the user has explicitly dismissed; entries
+// auto-expire so a long-running ignore doesn't fully suppress.
+const dismissedTTL = new Map(); // key → epoch ms when dismissal expires
+
+function sessionByKey(key) {
+  return (state.sessions || []).find(
+    (s) => sessionKey(s.namespace, s.pod, s.ec) === key,
+  );
+}
+
+// Effective expiry: max(startedAt + ttl, extendedUntil). The
+// sweeper uses the same rule on the server.
+function effectiveExpiry(sess, ttlSecs) {
+  if (!sess || !sess.started_at || !ttlSecs) return null;
+  const started = Date.parse(sess.started_at);
+  if (!started) return null;
+  let exp = started + ttlSecs * 1000;
+  if (sess.extended_until) {
+    const ext = Date.parse(sess.extended_until);
+    if (ext && ext > exp) exp = ext;
+  }
+  return exp;
+}
+
+function checkTTLAlerts() {
+  const ttl = (state.config && state.config.ecSweepTTLSecs) || 0;
+  if (!ttl) { hideTTLAlert(); return; }
+
+  // Walk attached sessions; pick the one closest to expiry within
+  // the lead window that the user hasn't actively dismissed.
+  const now = Date.now();
+  let target = null;
+  let soonestRemaining = Infinity;
+  for (const rec of state.attached.values()) {
+    if (rec.dead) continue;
+    const dExp = dismissedTTL.get(rec.key);
+    if (dExp && dExp > now) continue;
+    const sess = sessionByKey(rec.key);
+    const exp = effectiveExpiry(sess, ttl);
+    if (exp == null) continue;
+    const remaining = Math.floor((exp - now) / 1000);
+    if (remaining <= 0 || remaining > TTL_ALERT_LEAD_SECS) continue;
+    if (remaining < soonestRemaining) {
+      soonestRemaining = remaining;
+      target = rec;
+    }
+  }
+  if (!target) { hideTTLAlert(); return; }
+  showTTLAlert(target, soonestRemaining);
+}
+
+function showTTLAlert(rec, remaining) {
+  const a = $("ttl-alert");
+  const msg = $("ttl-alert-msg");
+  // Only re-set the dataset when switching targets so the user's
+  // hover/focus on a button isn't reset on every 1Hz tick.
+  if (a.dataset.key !== rec.key) a.dataset.key = rec.key;
+  msg.textContent = `${rec.ns} :: ${rec.pod} :: ${rec.ec} — ${fmtRemaining(remaining)}`;
+  a.hidden = false;
+}
+
+function hideTTLAlert() {
+  const a = $("ttl-alert");
+  if (a.hidden) return;
+  a.hidden = true;
+  a.dataset.key = "";
+}
+
+function setupTTLAlert() {
+  $("ttl-alert-extend").addEventListener("click", async () => {
+    const key = $("ttl-alert").dataset.key;
+    if (!key) return;
+    const rec = state.attached.get(key);
+    if (!rec) return;
+    const url =
+      `/debug/sessions/${encodeURIComponent(rec.ns)}/` +
+      `${encodeURIComponent(rec.pod)}/${encodeURIComponent(rec.ec)}/extend`;
+    try {
+      const r = await http(url, { method: "POST" });
+      toast(`Extended ${rec.ec} until ${r.extended_until}`, "success");
+      hideTTLAlert();
+      // The fresh /debug/sessions response will carry extended_until,
+      // which feeds the EC banner countdown + the next tick's check.
+      loadSessions();
+    } catch (e) {
+      toast("Extend failed: " + e.message, "error");
+    }
+  });
+  $("ttl-alert-dismiss").addEventListener("click", () => {
+    const key = $("ttl-alert").dataset.key;
+    if (key) {
+      dismissedTTL.set(key, Date.now() + TTL_ALERT_DISMISS_SECS * 1000);
+    }
+    hideTTLAlert();
+  });
+}
+
 // ---------- active sessions ----------
 // Cluster-wide list of running porthole-* ECs, surfaced in a topbar
 // dropdown so the user can jump back to a session they injected in
@@ -1075,6 +1309,10 @@ function sessionAge(iso) {
 }
 
 function renderSessions() {
+  // The EC info banner reads started_at + image from state.sessions,
+  // so keep it in lockstep with whatever just refreshed our view of
+  // the world.
+  renderECBanner();
   const wrap = $("sessions");
   const countEl = $("sessions-count");
   const labelEl = $("sessions-label");
@@ -1139,7 +1377,8 @@ function renderSessions() {
       `<span class="${dotClass}" aria-hidden="true">${dotChar}</span>` +
       `<span class="sessions-body">` +
         `<span class="sessions-loc">` +
-          `${escapeHtml(s.namespace)} / ` +
+          `<span class="sessions-ns">${escapeHtml(s.namespace)}</span>` +
+          ` / ` +
           `<span class="sessions-pod">${escapeHtml(s.pod)}</span>` +
         `</span>` +
         `<span class="sessions-ec">${escapeHtml(s.ec)}</span>` +
@@ -1210,6 +1449,7 @@ async function init() {
   setupFilters();
   setupOverflowHints();
   setupSessionsWidget();
+  setupTTLAlert();
   updateInstructions();
   $("inject-btn").addEventListener("click", injectDebugger);
   await loadConfig();

@@ -217,9 +217,9 @@ body {
   position: absolute;
   top: calc(100% + 8px);
   left: 0;
-  min-width: 260px;
-  max-width: 380px;
-  max-height: 320px;
+  min-width: 360px;
+  max-width: min(640px, 80vw);
+  max-height: 400px;
   overflow-y: auto;
   padding: 6px;
   background: var(--bg-elev);
@@ -276,22 +276,34 @@ body {
 .sessions-body {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: stretch;
   gap: 2px;
   min-width: 0;
+  flex: 1;
+}
+.sessions-loc,
+.sessions-ec,
+.sessions-meta {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
 }
 .sessions-loc {
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.02em;
 }
-/* Tint the pod name a soft orange so the eye lands on it first when
- * scanning a long dropdown — the namespace gives context, the EC
- * hash is technical, but the pod is what the operator is usually
- * trying to remember. Kept distinct from `--amber` (connecting-dot
- * yellow) to avoid status-vs-label confusion. */
+/* Color-code the dropdown rows so the eye lands on the pod first:
+ *   namespace = glacier blue (light, recedes; gives context)
+ *   pod       = electric blue (vibrant; the thing operators scan for)
+ * The "/" separator stays in the default text color. */
+.sessions-ns {
+  color: #93c5fd; /* glacier */
+}
 .sessions-pod {
-  color: #fdba74;
+  color: #38bdf8; /* electric blue */
+  font-weight: 600;
 }
 .sessions-ec {
   font-size: 11px;
@@ -520,6 +532,9 @@ input::placeholder { color: var(--text-dim); }
 .list::-webkit-scrollbar-track { background: transparent; }
 
 .list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 7px 10px;
   border-radius: 5px;
   cursor: pointer;
@@ -534,6 +549,32 @@ input::placeholder { color: var(--text-dim); }
   line-height: 1.3;
 }
 .list li:hover { background: var(--bg-elev2); }
+/* The name span carries the ellipsis truncation; the session dot
+ * sits beside it, fixed-size, never compresses. */
+.ns-name,
+.pod-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ns-session-dot,
+.pod-session-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent-strong);
+  box-shadow: 0 0 6px var(--accent-glow);
+}
+/* When the row is "active" (currently selected in the sidebar), the
+ * row background is the accent color; flip the dot to dark so it
+ * stays visible against the bright background. */
+.list li.active .ns-session-dot,
+.list li.active .pod-session-dot {
+  background: var(--bg);
+  box-shadow: none;
+}
 
 /* Service Viewer rows — two-column layout (name / ports) */
 .svc-item {
@@ -821,6 +862,41 @@ button:disabled {
   padding: 4px 0;
 }
 
+/* ---------- EC info banner ---------- */
+/* Sits between the EC chip bar and the terminal pane. Shows the
+ * active session's ns / pod / ec / image and a countdown to
+ * auto-sweep when EC_SWEEP_TTL is enabled server-side. Mirrors the
+ * terminal pane's lifecycle: hidden when no session is attached. */
+.ec-banner {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 8px 14px;
+  background: var(--bg-elev);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text);
+  overflow-x: auto;
+  white-space: nowrap;
+}
+.ec-banner[hidden] { display: none; }
+.ec-banner-field {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+.ec-banner-label {
+  text-transform: uppercase;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+}
+.ec-banner-ttl-soon    { color: var(--amber); }
+.ec-banner-ttl-expired { color: var(--red); }
+
 /* ---------- terminal ---------- */
 .terminal-wrap {
   flex: 1;
@@ -879,6 +955,80 @@ button:disabled {
   font-size: 11px;
 }
 .terminal-wrap.has-session .terminal-empty { display: none; }
+
+/* ---------- pre-sweep alert ---------- */
+/* Stickier than a toast: visible until the user picks Extend or
+ * Dismiss (or the session is auto-swept). Positioned bottom-center
+ * so it's hard to miss but doesn't block the terminal output. */
+.alert {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  background: var(--bg-elev2);
+  border: 1px solid var(--amber);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+  padding: 12px 18px 12px 20px;
+  z-index: 50;
+  max-width: min(640px, 90vw);
+}
+.alert[hidden] { display: none; }
+.alert-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.alert-title {
+  color: var(--amber);
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+}
+.alert-msg {
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.alert-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.alert-btn {
+  padding: 6px 14px;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+.alert-btn.extend {
+  background: var(--accent);
+  color: var(--bg);
+  border: 1px solid var(--accent);
+  font-weight: 600;
+}
+.alert-btn.extend:hover {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+.alert-btn.dismiss {
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+.alert-btn.dismiss:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
 
 /* ---------- toast ---------- */
 .toast {
