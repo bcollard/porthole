@@ -24,21 +24,32 @@ jobs:
         with:
           version: v3.16.0
 
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - uses: ko-build/setup-ko@v0.7
+
       - name: Read chart metadata
         id: chart
         run: |
           NAME=$(grep '^name:' "$CHART_DIR/Chart.yaml" | awk '{print $2}' | tr -d '"')
           VERSION=$(grep '^version:' "$CHART_DIR/Chart.yaml" | awk '{print $2}' | tr -d '"')
           OWNER_LC=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          echo "name=$NAME" >> "$GITHUB_OUTPUT"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "name=$NAME"           >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION"     >> "$GITHUB_OUTPUT"
           echo "namespace=$OWNER_LC/charts" >> "$GITHUB_OUTPUT"
+          echo "image_repo=$REGISTRY/$OWNER_LC/$NAME" >> "$GITHUB_OUTPUT"
           echo "Chart: $NAME-$VERSION → oci://$REGISTRY/$OWNER_LC/charts"
+          echo "Image: $REGISTRY/$OWNER_LC/$NAME:$VERSION"
 
-      - name: Helm registry login
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login "$REGISTRY" -u "${{ github.actor }}" --password-stdin
+      - name: Registry login (helm + docker)
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm   registry login "$REGISTRY" -u "${{ github.actor }}" --password-stdin
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker          login "$REGISTRY" -u "${{ github.actor }}" --password-stdin
 
-      - name: Check if version already published
+      - name: Check if chart version already published
         id: check
         run: |
           if helm pull "oci://$REGISTRY/${{ steps.chart.outputs.namespace }}/${{ steps.chart.outputs.name }}" \
@@ -50,32 +61,64 @@ jobs:
             echo "should_publish=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Package
+      # Build + push the container image first so the chart that
+      # references it doesn't go live pointing at a missing tag.
+      # `ko` reads the Go module, produces a tiny distroless-static
+      # image, and publishes multi-arch in one shot.
+      - name: Build + push porthole image (multi-arch)
+        if: steps.check.outputs.should_publish == 'true'
+        env:
+          KO_DOCKER_REPO: ${{ steps.chart.outputs.image_repo }}
+        run: |
+          ko build --bare \
+            --platform=linux/amd64,linux/arm64 \
+            --tags "${{ steps.chart.outputs.version }},latest" \
+            --image-label "org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
+            --image-label "org.opencontainers.image.licenses=Apache-2.0" \
+            .
+
+      - name: Package chart
         if: steps.check.outputs.should_publish == 'true'
         run: |
           mkdir -p /tmp/dist
           helm package "$CHART_DIR" --destination /tmp/dist
 
-      - name: Push to GHCR
+      - name: Push chart to GHCR
         if: steps.check.outputs.should_publish == 'true'
         run: |
           helm push "/tmp/dist/${{ steps.chart.outputs.name }}-${{ steps.chart.outputs.version }}.tgz" \
             "oci://$REGISTRY/${{ steps.chart.outputs.namespace }}"
 
+      # Flip both packages to public. The chart lives at
+      # `charts/<name>` (helm pushed it under the `charts` namespace),
+      # the image lives at `<name>` (ko pushed it directly under the
+      # owner). Best-effort: GH's user-packages API sometimes 404s
+      # on the very first publish before the package fully registers;
+      # the second-run path always works. The warning URLs are the
+      # correct GHCR settings pages so a human can flip manually.
       - name: Set package visibility to public
         if: steps.check.outputs.should_publish == 'true'
         continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          PKG=$(printf 'charts/%s' "${{ steps.chart.outputs.name }}" | sed 's|/|%2F|g')
-          curl -fsS -X PATCH \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/user/packages/container/$PKG/visibility" \
-            -d '{"visibility":"public"}' \
-            || echo "::warning::Could not flip visibility via API. Toggle once at https://github.com/users/${{ github.repository_owner }}/packages/container/${{ steps.chart.outputs.name }}/settings"
+          flip_visibility() {
+            local pkg_path="$1"     # e.g. "charts/porthole" or "porthole"
+            local pkg_encoded
+            pkg_encoded=$(printf '%s' "$pkg_path" | sed 's|/|%2F|g')
+            if curl -fsS -X PATCH \
+                -H "Accept: application/vnd.github+json" \
+                -H "Authorization: Bearer $GH_TOKEN" \
+                -H "X-GitHub-Api-Version: 2022-11-28" \
+                "https://api.github.com/user/packages/container/$pkg_encoded/visibility" \
+                -d '{"visibility":"public"}'; then
+              echo "✓ $pkg_path → public"
+            else
+              echo "::warning::Could not flip $pkg_path visibility via API. Toggle once at https://github.com/users/${{ github.repository_owner }}/packages/container/$pkg_encoded/settings"
+            fi
+          }
+          flip_visibility "charts/${{ steps.chart.outputs.name }}"
+          flip_visibility "${{ steps.chart.outputs.name }}"
 
       - name: Tag the release
         if: steps.check.outputs.should_publish == 'true'
@@ -83,7 +126,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="chart-v${{ steps.chart.outputs.version }}"
-          git config user.name "github-actions[bot]"
+          git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "$TAG" -m "Helm chart $TAG"
+          git tag -a "$TAG" -m "Helm chart $TAG (porthole image: ${{ steps.chart.outputs.image_repo }}:${{ steps.chart.outputs.version }})"
           git push origin "$TAG"
