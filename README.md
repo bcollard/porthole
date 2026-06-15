@@ -162,6 +162,56 @@ make opa-eval         # 15 case Rego suite, no cluster required
 
 Full schema with comments: [`helm-chart/porthole/values.yaml`](./helm-chart/porthole/values.yaml).
 
+## Audit log
+
+One structured `slog` JSON line on stdout per security-relevant
+action — every inject, attach-deny, and cleanup. Shaped to the
+[Elastic Common Schema](https://www.elastic.co/guide/en/ecs/8.11/index.html)
+(v8.11) so it ingests into Elastic, Loki, Splunk, anything that
+keys on `event.action` / `event.outcome` / `user.id` /
+`kubernetes.namespace` with no custom parser.
+
+A denied inject looks like this — `event.type: denied`,
+`event.outcome: failure`, and the OPA decision text in
+`event.reason`:
+
+```json
+{
+  "@timestamp":    "2026-06-07T10:53:45Z",
+  "log.level":     "WARN",
+  "message":       "inject",
+  "ecs.version":   "8.11",
+  "event": {
+    "kind":        "event",
+    "category":    ["iam"],
+    "action":      "inject_ec",
+    "type":        "denied",
+    "outcome":     "failure",
+    "dataset":     "porthole.audit",
+    "provider":    "porthole",
+    "duration":    12387251,
+    "reason":      "matched: group=junior-devs role=debugger ns=dev-checkout — outside business hours"
+  },
+  "user":          { "id": "alice@example.com" },
+  "source":        { "ip": "10.0.1.5" },
+  "kubernetes":    { "namespace": "dev-checkout",
+                     "pod": { "name": "api-7d4b9c5f-mznpr" } },
+  "container":     { "image": { "name": "nicolaka/netshoot" } }
+}
+```
+
+Successful path: `event.type: creation` (inject) / `deletion`
+(cleanup), `event.outcome: success`. Internal errors collapse into
+`event.outcome: failure`, `event.type: error`, with the error text
+on `error.message`. Per-byte attach traffic is intentionally not
+audited — the start of a session shows in gin's access log, and an
+authZ-deny on attach lands here as `attach_ec` / `denied`.
+
+Implementation: [`pkg/audit/audit.go`](./pkg/audit/audit.go). The
+canonical shape per event type lives in
+[`pkg/audit/audit_smoke_test.go`](./pkg/audit/audit_smoke_test.go) —
+`go test -v ./pkg/audit/` pretty-prints one of each.
+
 ## Architecture diagrams
 
 Three SVGs, each at a different zoom level:
