@@ -6,6 +6,10 @@ attach to it from your browser. Pluggable authN (JWT/OIDC) and authZ
 (OPA) so developers reach pods without `kubectl`, and without the cluster
 having to know their corporate identity.
 
+[![porthole demo — click for the autoplay walkthrough](docs/public-recordings/poster.jpg)](https://porthole.runlocal.dev/)
+
+> Click the still for the live demo on [porthole.runlocal.dev](https://porthole.runlocal.dev/).
+
 ![architecture](./docs/architecture.svg)
 
 ## Getting started
