@@ -17,7 +17,7 @@ the UI immediately.
 
 ```sh
 helm install porthole oci://ghcr.io/bcollard/charts/porthole \
-  --version 0.2.0 \
+  --version 0.2.1 \
   --namespace porthole --create-namespace \
   --set auth.disabled=true
 
